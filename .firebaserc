@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "admn-45826"
+  },
+  "targets": {
+    "admn-45826": {
+      "hosting": {
+        "admin": [
+          "admn-45826"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

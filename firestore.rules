@@ -1,0 +1,81 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // アクションログコレクション
+    match /actionLogs/{document} {
+      // 読み取り・書き込みを全て許可（本番環境では適切な認証を設定してください）
+      allow read, write: if true;
+    }
+    
+    // 案件コレクション
+    match /deals/{document} {
+      // 読み取り・書き込みを全て許可（本番環境では適切な認証を設定してください）
+      allow read, write: if true;
+    }
+    
+    // 進捗ダッシュボードコレクション
+    match /progressDashboard/{document} {
+      // 読み取り・書き込みを全て許可（本番環境では適切な認証を設定してください）
+      allow read, write: if true;
+    }
+    
+    // 紹介者マスタコレクション
+    match /introducers/{document} {
+      // 読み取り・書き込みを全て許可（本番環境では適切な認証を設定してください）
+      allow read, write: if true;
+    }
+    
+    // 担当者マスタコレクション（パートナー専用）
+    match /representatives/{document} {
+      // 読み取り・書き込みを全て許可（本番環境では適切な認証を設定してください）
+      allow read, write: if true;
+    }
+    
+    // 売上目標コレクション（Ver 2.4新規追加）
+    match /salesTargets/{document} {
+      // 読み取り・書き込みを全て許可（本番環境では適切な認証を設定してください）
+      allow read, write: if true;
+    }
+    
+    // インフルエンサーコレクション（Ver 2.8新規追加）
+    match /influencers/{document} {
+      // 読み取り・書き込みを全て許可（本番環境では適切な認証を設定してください）
+      allow read, write: if true;
+    }
+    
+    // キャスティング提案コレクション（Ver 2.8新規追加）
+    match /castingProposals/{document} {
+      // 読み取り・書き込みを全て許可（本番環境では適切な認証を設定してください）
+      allow read, write: if true;
+    }
+    
+    // 提案メニューマスターコレクション（Ver 2.16新規追加）
+    match /proposalMenus/{document} {
+      // 読み取り・書き込みを全て許可（本番環境では適切な認証を設定してください）
+      allow read, write: if true;
+    }
+    
+    // 担当者別目標コレクション（Ver 2.16新規追加）
+    match /representativeTargets/{document} {
+      // 読み取り・書き込みを全て許可（本番環境では適切な認証を設定してください）
+      allow read, write: if true;
+    }
+    
+    // 投稿スケジュールコレクション（第一想起取れるくん専用）
+    match /postingSchedules/{document} {
+      // 読み取り・書き込みを全て許可（本番環境では適切な認証を設定してください）
+      allow read, write: if true;
+    }
+    
+    // タスクテンプレートコレクション（第一想起取れるくん専用）
+    match /taskTemplates/{document} {
+      // 読み取り・書き込みを全て許可（本番環境では適切な認証を設定してください）
+      allow read, write: if true;
+    }
+    
+    // その他のコレクションへのアクセスも許可（開発用）
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+} 

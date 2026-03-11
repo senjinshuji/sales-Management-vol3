@@ -1,0 +1,43 @@
+
+=== Deploying to 'admn-45826'...
+
+i  deploying functions
+i  functions: preparing codebase default for deployment
+i  functions: ensuring required API cloudfunctions.googleapis.com is enabled...
+i  functions: ensuring required API cloudbuild.googleapis.com is enabled...
+i  artifactregistry: ensuring required API artifactregistry.googleapis.com is enabled...
+✔  functions: required API cloudfunctions.googleapis.com is enabled
+✔  functions: required API cloudbuild.googleapis.com is enabled
+✔  artifactregistry: required API artifactregistry.googleapis.com is enabled
+i  functions: Loading and analyzing source code for codebase default to determine what to deploy
+Serving at port 8328
+
+初期データ投入エラー: Error: Could not load the default credentials. Browse to https://cloud.google.com/docs/authentication/getting-started for more information.
+    at GoogleAuth.getApplicationDefaultAsync (/Users/shjkt/Downloads/claude_code_folder/営業管理vol2/functions/node_modules/google-auth-library/build/src/auth/googleauth.js:287:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async GoogleAuth._GoogleAuth_determineClient (/Users/shjkt/Downloads/claude_code_folder/営業管理vol2/functions/node_modules/google-auth-library/build/src/auth/googleauth.js:834:32)
+    at async GoogleAuth.getClient (/Users/shjkt/Downloads/claude_code_folder/営業管理vol2/functions/node_modules/google-auth-library/build/src/auth/googleauth.js:698:20)
+    at async GrpcClient._getCredentials (/Users/shjkt/Downloads/claude_code_folder/営業管理vol2/functions/node_modules/google-gax/build/src/grpc.js:145:24)
+    at async GrpcClient.createStub (/Users/shjkt/Downloads/claude_code_folder/営業管理vol2/functions/node_modules/google-gax/build/src/grpc.js:318:23)
+Caused by: Error
+    at QueryUtil._getResponse (/Users/shjkt/Downloads/claude_code_folder/営業管理vol2/functions/node_modules/@google-cloud/firestore/build/src/reference/query-util.js:44:23)
+    at Query._getResponse (/Users/shjkt/Downloads/claude_code_folder/営業管理vol2/functions/node_modules/@google-cloud/firestore/build/src/reference/query.js:784:32)
+    at Query._get (/Users/shjkt/Downloads/claude_code_folder/営業管理vol2/functions/node_modules/@google-cloud/firestore/build/src/reference/query.js:777:35)
+    at /Users/shjkt/Downloads/claude_code_folder/営業管理vol2/functions/node_modules/@google-cloud/firestore/build/src/reference/query.js:745:43
+    at /Users/shjkt/Downloads/claude_code_folder/営業管理vol2/functions/node_modules/@google-cloud/firestore/build/src/telemetry/enabled-trace-util.js:110:30
+    at NoopContextManager.with (/Users/shjkt/Downloads/claude_code_folder/営業管理vol2/functions/node_modules/@opentelemetry/api/build/src/context/NoopContextManager.js:25:19)
+    at ContextAPI.with (/Users/shjkt/Downloads/claude_code_folder/営業管理vol2/functions/node_modules/@opentelemetry/api/build/src/api/context.js:60:46)
+    at NoopTracer.startActiveSpan (/Users/shjkt/Downloads/claude_code_folder/営業管理vol2/functions/node_modules/@opentelemetry/api/build/src/trace/NoopTracer.js:65:31)
+    at ProxyTracer.startActiveSpan (/Users/shjkt/Downloads/claude_code_folder/営業管理vol2/functions/node_modules/@opentelemetry/api/build/src/trace/ProxyTracer.js:36:24)
+    at EnabledTraceUtil.startActiveSpan (/Users/shjkt/Downloads/claude_code_folder/営業管理vol2/functions/node_modules/@google-cloud/firestore/build/src/telemetry/enabled-trace-util.js:102:28)
+
+i  extensions: ensuring required API firebaseextensions.googleapis.com is enabled...
+✔  extensions: required API firebaseextensions.googleapis.com is enabled
+i  functions: preparing functions directory for uploading...
+i  functions: packaged /Users/shjkt/Downloads/claude_code_folder/営業管理vol2/functions (74.21 KB) for uploading
+i  functions: Skipping the deploy of unchanged functions.
+✔  functions[api(us-central1)] Skipped (No changes detected)
+
+✔  Deploy complete!
+
+Project Console: https://console.firebase.google.com/project/admn-45826/overview

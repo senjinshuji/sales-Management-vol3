@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>GPT API Direct Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        textarea { width: 100%; height: 150px; margin: 10px 0; }
+        button { padding: 10px 20px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #2980b9; }
+        button:disabled { background: #ccc; }
+        #result { margin-top: 20px; padding: 20px; background: #f8f9fa; border-radius: 4px; }
+        .error { color: #e74c3c; }
+        .success { color: #27ae60; }
+    </style>
+</head>
+<body>
+    <h1>GPT API ダイレクトテスト</h1>
+    
+    <div>
+        <label for="notes">議事録を入力:</label>
+        <textarea id="notes" placeholder="ここに議事録を入力してください..."></textarea>
+    </div>
+    
+    <button id="analyzeBtn" onclick="analyze()">AI分析実行</button>
+    
+    <div id="result"></div>
+    
+    <script type="module">
+        const API_KEY = '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';
+        
+        window.analyze = async function() {
+            const notes = document.getElementById('notes').value;
+            const btn = document.getElementById('analyzeBtn');
+            const resultDiv = document.getElementById('result');
+            
+            if (!notes || notes.trim().length < 10) {
+                alert('議事録を入力してください（10文字以上）');
+                return;
+            }
+            
+            btn.disabled = true;
+            btn.textContent = '分析中...';
+            resultDiv.innerHTML = '<p>GPT APIを呼び出しています...</p>';
+            
+            const prompt = `下記の議事録を読み取って、以下の3つの項目を出力してください：
+
+■ AI要約
+この議事録を5行で要約してください。
+
+■ アクションプラン  
+この議事録の内容に基づいて、次に取るべき具体的なアクションを提案してください。
+議事録の内容から適切な行動を推測し、実行可能で具体的なアクションを複数提案してください。
+例：「提案書作成」「価格調整」「社内稟議」「デモ実施」「追加ヒアリング」「契約書準備」など
+
+■ ステータス
+以下の6つのステータスから最も適切なものを1つ選択してください：
+- 与件化_提案中：MTGが終わっていて提案をこちらが作成するステータス
+- 受注：このMTGを持って、実際にサービスが受注されたステータス
+- 失注：MTGの結果、サービスが導入されなかったステータス
+- 保留：一旦サービス導入が見送られているが、長期的にはサービス導入の可能性があるステータス
+- 検討中：MTGが終わっていて提案を先方が検討しているステータス
+- 稼働終了：追いかけもしない、完全に稼働が終了したステータス
+
+議事録：
+${notes}
+
+※回答は上記の■で示した3つの項目のみを含めてください。他の情報は不要です。`;
+            
+            try {
+                console.log('Sending to GPT:', prompt);
+                
+                const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: 'gpt-4o-mini',
+                        messages: [
+                            {
+                                role: 'system',
+                                content: 'あなたは営業支援AIです。議事録を分析して、次のアクションプランと適切なステータスを提案してください。回答は簡潔で実行可能な内容にしてください。'
+                            },
+                            {
+                                role: 'user',
+                                content: prompt
+                            }
+                        ],
+                        max_tokens: 1000,
+                        temperature: 0.3
+                    })
+                });
+                
+                const data = await response.json();
+                console.log('GPT Response:', data);
+                
+                if (data.error) {
+                    throw new Error(data.error.message);
+                }
+                
+                const content = data.choices[0]?.message?.content;
+                
+                resultDiv.innerHTML = `
+                    <h3 class="success">分析結果:</h3>
+                    <pre style="white-space: pre-wrap; background: white; padding: 10px; border-radius: 4px;">
+${content}
+                    </pre>
+                    <p style="color: #666; font-size: 0.9em;">
+                        入力文字数: ${notes.length}文字<br>
+                        実行時刻: ${new Date().toLocaleString()}
+                    </p>
+                `;
+                
+            } catch (error) {
+                console.error('Error:', error);
+                resultDiv.innerHTML = `<p class="error">エラー: ${error.message}</p>`;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'AI分析実行';
+            }
+        };
+    </script>
+</body>
+</html>
