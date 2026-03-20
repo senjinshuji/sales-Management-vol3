@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import styled from 'styled-components';
-import { FiSearch, FiChevronDown, FiChevronUp } from 'react-icons/fi';
+import { FiSearch, FiChevronDown, FiChevronUp, FiPlus } from 'react-icons/fi';
+import { db } from '../firebase.js';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { fetchProjects, fetchProjectSalesData } from '../services/projectService.js';
 import { CONTINUATION_STATUS_COLORS } from '../data/constants.js';
 import ProjectDetailPanel from './ProjectDetailPanel.js';
@@ -23,7 +25,7 @@ const formatCurrency = (amount) => {
 };
 
 /** 継続ステータスを自動計算する */
-const calcContinuationStatus = (records) => {
+const calcContinuationStatus = (records, isExistingProject) => {
   if (!records || records.length === 0) return '';
   const latest = records[0];
   const today = new Date();
@@ -34,24 +36,42 @@ const calcContinuationStatus = (records) => {
   const isPhase8 = latest.phase === 'フェーズ8';
   const isPhase1to7 = latest.phase && latest.phase !== 'フェーズ8' && latest.phase !== '失注';
 
-  // 継続成約: 最新行がフェーズ8 & startDateが未来 & レコード2件以上
-  if (isPhase8 && startDate && startDate > today && records.length >= 2) {
-    return '継続成約';
-  }
-
-  // 終了: 最新行がフェーズ8 & endDateが過去
-  if (isPhase8 && endDate && endDate < today) {
-    return '終了';
-  }
-
-  // 継続提案中: 最新行がフェーズ1-7 & 2行目以降（recordsが2件以上）
-  if (isPhase1to7 && records.length >= 2) {
-    return '継続提案中';
-  }
-
-  // 施策実施中: 最新行のstartDateあり & (endDateが未来 or 空)
-  if (startDate && (!endDate || endDate >= today)) {
-    return '施策実施中';
+  if (isExistingProject) {
+    // 既存案件ボタンから追加された案件
+    // 継続成約: フェーズ8 & startDateが未来（レコード件数不問）
+    if (isPhase8 && startDate && startDate > today) {
+      return '継続成約';
+    }
+    // 終了: フェーズ8 & endDateが過去
+    if (isPhase8 && endDate && endDate < today) {
+      return '終了';
+    }
+    // 継続提案中: フェーズ1-7（レコード件数不問）
+    if (isPhase1to7) {
+      return '継続提案中';
+    }
+    // 施策実施中: startDateあり & (endDateが未来 or 空)
+    if (startDate && (!endDate || endDate >= today)) {
+      return '施策実施中';
+    }
+  } else {
+    // 新規側から追加された案件
+    // 新規成約: フェーズ8 & startDateが未来
+    if (isPhase8 && startDate && startDate > today) {
+      return '新規成約';
+    }
+    // 終了: フェーズ8 & endDateが過去
+    if (isPhase8 && endDate && endDate < today) {
+      return '終了';
+    }
+    // 継続提案中: フェーズ1-7 & レコード2件以上
+    if (isPhase1to7 && records.length >= 2) {
+      return '継続提案中';
+    }
+    // 施策実施中: startDateあり & (endDateが未来 or 空)
+    if (startDate && (!endDate || endDate >= today)) {
+      return '施策実施中';
+    }
   }
 
   return '';
@@ -84,6 +104,9 @@ const PageContainer = styled.div`
 `;
 
 const PageHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 1.5rem;
 `;
 
@@ -269,6 +292,98 @@ const EmptyText = styled.div`
   font-size: 0.9rem;
 `;
 
+const AddButton = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 6px;
+  background: #3498db;
+  color: white;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  &:hover { opacity: 0.9; }
+`;
+
+const ModalOverlay = styled.div`
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+`;
+
+const ModalBox = styled.div`
+  background: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  width: 420px;
+  max-width: 90%;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+`;
+
+const ModalTitle = styled.h3`
+  font-size: 1rem;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0 0 1.25rem;
+`;
+
+const FormGroup = styled.div`
+  margin-bottom: 1rem;
+`;
+
+const FormLabel = styled.label`
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #7f8c8d;
+  margin-bottom: 0.3rem;
+`;
+
+const FormSelect = styled.select`
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  &:focus { outline: none; border-color: #3498db; }
+`;
+
+const FormInput = styled.input`
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  box-sizing: border-box;
+  &:focus { outline: none; border-color: #3498db; }
+`;
+
+const ModalActions = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+`;
+
+const ModalBtn = styled.button`
+  padding: 0.5rem 1.25rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  font-weight: 600;
+  background: ${props => props.$primary ? '#3498db' : '#e9ecef'};
+  color: ${props => props.$primary ? 'white' : '#2c3e50'};
+  &:hover { opacity: 0.9; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+`;
+
 // ============================================
 // コンポーネント
 // ============================================
@@ -282,6 +397,9 @@ const ProjectManagementPage = () => {
   const [naModalText, setNaModalText] = useState(null);
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addForm, setAddForm] = useState({ companyName: '', introducer: '', productName: '' });
+  const [isSaving, setIsSaving] = useState(false);
 
   // プロジェクト取得
   const loadProjects = useCallback(async () => {
@@ -343,7 +461,7 @@ const ProjectManagementPage = () => {
         introducer: p.introducer || '',
         proposalMenu: p.proposalMenu || '',
         totalSales: calcTotalSales(records),
-        continuationStatus: calcContinuationStatus(records),
+        continuationStatus: calcContinuationStatus(records, !!p.isExistingProject),
         elapsedDays: calcElapsedDays(records),
         latestNaContent: latestEntry?.actionContent || '',
         latestNaDueDate: latestEntry?.actionDueDate || '',
@@ -369,6 +487,13 @@ const ProjectManagementPage = () => {
         );
       });
     }
+
+    // デフォルトは作成日の降順（新しい案件が上）
+    result = [...result].sort((a, b) => {
+      const aTime = a.createdAt?.toMillis?.() || a.createdAt?.seconds * 1000 || 0;
+      const bTime = b.createdAt?.toMillis?.() || b.createdAt?.seconds * 1000 || 0;
+      return bTime - aTime;
+    });
 
     // ソート
     if (sortKey) {
@@ -400,6 +525,48 @@ const ProjectManagementPage = () => {
     return null;
   };
 
+  // 会社名の一覧（重複排除）
+  const companyList = useMemo(() => {
+    const names = [...new Set(projects.map(p => p.companyName).filter(Boolean))];
+    return names.sort();
+  }, [projects]);
+
+  // 選択された会社に紐づく代理店一覧
+  const agencyListForCompany = useMemo(() => {
+    if (!addForm.companyName) return [];
+    const agencies = [...new Set(
+      projects
+        .filter(p => p.companyName === addForm.companyName)
+        .map(p => p.introducer || p.agencyName)
+        .filter(Boolean)
+    )];
+    return agencies.sort();
+  }, [projects, addForm.companyName]);
+
+  // 新規案件追加
+  const handleAddProject = async () => {
+    if (!addForm.companyName || !addForm.productName.trim()) return;
+    try {
+      setIsSaving(true);
+      await addDoc(collection(db, 'progressDashboard'), {
+        companyName: addForm.companyName,
+        introducer: addForm.introducer,
+        productName: addForm.productName.trim(),
+        status: 'フェーズ8',
+        isExistingProject: true,
+        createdAt: serverTimestamp()
+      });
+      setShowAddModal(false);
+      setAddForm({ companyName: '', introducer: '', productName: '' });
+      await loadProjects();
+    } catch (error) {
+      console.error('Failed to add project:', error);
+      alert('案件の追加に失敗しました');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   // プロジェクト更新
   const handleProjectUpdate = useCallback((updatedProject) => {
     setProjects((prev) =>
@@ -414,6 +581,9 @@ const ProjectManagementPage = () => {
     <PageContainer>
       <PageHeader>
         <Title>既存案件</Title>
+        <AddButton onClick={() => setShowAddModal(true)}>
+          <FiPlus size={14} />新規追加
+        </AddButton>
       </PageHeader>
 
       <SearchInputWrapper>
@@ -440,7 +610,6 @@ const ProjectManagementPage = () => {
                 </TableHeaderCell>
                 <TableHeaderCell>代理店名</TableHeaderCell>
                 <TableHeaderCell>商材名</TableHeaderCell>
-                <TableHeaderCell>提案メニュー</TableHeaderCell>
                 <TableHeaderCell>運用ランク</TableHeaderCell>
                 <TableHeaderCell $sortable onClick={() => handleSort('totalSales')}>
                   累計売上{renderSortIcon('totalSales')}
@@ -464,7 +633,6 @@ const ProjectManagementPage = () => {
                   <TableCell style={{ fontWeight: 500 }}>{p.companyName || '-'}</TableCell>
                   <TableCell>{p.introducer || '-'}</TableCell>
                   <TableCell>{p.productName || '-'}</TableCell>
-                  <TableCell>{p.proposalMenu || '-'}</TableCell>
                   <TableCell>{p.rank || '-'}</TableCell>
                   <TableCell>{p.totalSales ? formatCurrency(p.totalSales) : '-'}</TableCell>
                   <TableCell>
@@ -518,11 +686,64 @@ const ProjectManagementPage = () => {
         </NaModal>
       )}
 
+      {/* 新規追加モーダル */}
+      {showAddModal && (
+        <ModalOverlay onClick={() => setShowAddModal(false)}>
+          <ModalBox onClick={(e) => e.stopPropagation()}>
+            <ModalTitle>既存案件を新規追加</ModalTitle>
+            <FormGroup>
+              <FormLabel>会社名</FormLabel>
+              <FormSelect
+                value={addForm.companyName}
+                onChange={e => setAddForm(prev => ({ ...prev, companyName: e.target.value, introducer: '' }))}
+              >
+                <option value="">選択してください</option>
+                {companyList.map(name => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </FormSelect>
+            </FormGroup>
+            <FormGroup>
+              <FormLabel>代理店名</FormLabel>
+              <FormSelect
+                value={addForm.introducer}
+                onChange={e => setAddForm(prev => ({ ...prev, introducer: e.target.value }))}
+                disabled={!addForm.companyName}
+              >
+                <option value="">選択してください</option>
+                {agencyListForCompany.map(name => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </FormSelect>
+            </FormGroup>
+            <FormGroup>
+              <FormLabel>商材名</FormLabel>
+              <FormInput
+                type="text"
+                placeholder="商材名を入力"
+                value={addForm.productName}
+                onChange={e => setAddForm(prev => ({ ...prev, productName: e.target.value }))}
+              />
+            </FormGroup>
+            <ModalActions>
+              <ModalBtn onClick={() => setShowAddModal(false)}>キャンセル</ModalBtn>
+              <ModalBtn
+                $primary
+                onClick={handleAddProject}
+                disabled={!addForm.companyName || !addForm.productName.trim() || isSaving}
+              >
+                {isSaving ? '保存中...' : '追加'}
+              </ModalBtn>
+            </ModalActions>
+          </ModalBox>
+        </ModalOverlay>
+      )}
+
       {/* サイドパネル */}
       {selectedProject && (
         <ProjectDetailPanel
           project={selectedProject}
-          onClose={() => setSelectedProject(null)}
+          onClose={() => { setSelectedProject(null); loadProjects(); }}
           onProjectUpdate={handleProjectUpdate}
         />
       )}

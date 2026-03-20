@@ -3,6 +3,8 @@ import styled, { keyframes } from 'styled-components';
 import { FiX, FiPlus, FiTrash2, FiEdit2, FiSend, FiChevronDown, FiChevronRight } from 'react-icons/fi';
 import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { PROJECT_RANKS, STATUSES, STATUS_COLORS, CONTINUATION_STATUS_COLORS } from '../data/constants.js';
+import { db } from '../firebase.js';
+import { collection, getDocs } from 'firebase/firestore';
 import { fetchAllStaff } from '../services/staffService.js';
 import {
   updateProject,
@@ -920,6 +922,25 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
   const [actionAssignee, setActionAssignee] = useState('');
   const [currentPhase, setCurrentPhase] = useState(record.phase || 'フェーズ1');
   const [isLoading, setIsLoading] = useState(false);
+  const [proposalMenuList, setProposalMenuList] = useState([]);
+
+  /** 提案メニューマスターを取得 */
+  useEffect(() => {
+    const fetchMenus = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, 'proposalMenus'));
+        const menus = snapshot.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(m => m.isActive !== false)
+          .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0))
+          .map(m => m.name);
+        setProposalMenuList(menus);
+      } catch (error) {
+        console.error('Failed to fetch proposal menus:', error);
+      }
+    };
+    fetchMenus();
+  }, []);
 
   /** エントリを取得（降順） */
   const loadEntries = useCallback(async () => {
@@ -1023,6 +1044,39 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
             value={record.endDate || ''}
             onChange={e => onRecordFieldChange(record.id, 'endDate', e.target.value)}
           />
+        </FormGroup>
+        <FormGroup $noMargin style={{ flex: 1 }}>
+          <Label>メニュー</Label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+            {proposalMenuList.map(menu => {
+              const selected = (record.proposalMenus || []).includes(menu);
+              return (
+                <span
+                  key={menu}
+                  onClick={() => {
+                    const current = record.proposalMenus || [];
+                    const next = selected
+                      ? current.filter(m => m !== menu)
+                      : [...current, menu];
+                    onRecordFieldChange(record.id, 'proposalMenus', next);
+                  }}
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    fontSize: '0.7rem',
+                    cursor: 'pointer',
+                    border: '1px solid',
+                    borderColor: selected ? '#3498db' : '#ddd',
+                    background: selected ? '#3498db' : 'white',
+                    color: selected ? 'white' : '#7f8c8d',
+                    fontWeight: selected ? 600 : 400,
+                  }}
+                >
+                  {menu}
+                </span>
+              );
+            })}
+          </div>
         </FormGroup>
       </div>
 
