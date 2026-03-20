@@ -78,6 +78,9 @@ const routeConfig = {
   '/posting-schedule': { name: '投稿本数管理', icon: null },
   '/posting-calendar': { name: '投稿カレンダー', icon: null },
   '/task-progress': { name: 'ToDo管理', icon: null },
+  '/project-management': { name: '既存案件', icon: null },
+  '/staff-master': { name: '人管理', icon: null },
+  '/next-action-management': { name: 'ネクストアクション管理', icon: null },
   
   // パートナー用ルート
   '/partner': { name: 'ホーム', icon: FiHome },

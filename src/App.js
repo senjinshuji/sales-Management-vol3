@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import styled from 'styled-components';
-import { FiPlus, FiList, FiGrid, FiBarChart, FiUsers, FiFileText, FiLogOut, FiDollarSign, FiHome, FiStar, FiTrendingUp, FiCalendar, FiCheckSquare, FiClipboard, FiRepeat } from 'react-icons/fi';
+import { FiPlus, FiList, FiGrid, FiBarChart, FiUsers, FiUser, FiFileText, FiLogOut, FiDollarSign, FiHome, FiStar, FiTrendingUp, FiCalendar, FiClipboard, FiRepeat, FiBriefcase } from 'react-icons/fi';
 import { analyzeMeetingNotes, isGPTServiceAvailable, debugAPIStatus, checkAPIKeyStatus } from './services/gptService.js';
 import LoginPage from './components/LoginPage.js';
 import ProtectedRoute from './components/ProtectedRoute.js';
@@ -18,10 +18,10 @@ import Breadcrumb from './components/Breadcrumb.js';
 import InfluencerRegisterPage from './components/InfluencerRegisterPage.js';
 import InfluencerListPage from './components/InfluencerListPage.js';
 import CastingManagePage from './components/CastingManagePage.js';
+import StaffMasterPage from './components/StaffMasterPage.js';
+import NextActionManagementPage from './components/NextActionManagementPage.js';
 import ProposalMenuMasterPage from './components/ProposalMenuMasterPage.js';
-import PostingSchedulePage from './components/PostingSchedulePage.js';
-import PostingCalendarPage from './components/PostingCalendarPage.js';
-import TaskProgressPage from './components/TaskProgressPage.js';
+import ProjectManagementPage from './components/ProjectManagementPage.js';
 import WeeklyReportPage from './components/WeeklyReportPage.js';
 import { UndoProvider } from './contexts/UndoContext.js';
 import authService from './services/authService.js';
@@ -248,7 +248,7 @@ function AdminApp() {
           <NavDropdown>
             <NavDropdownButton>
               <FiBarChart />
-              営業管理
+              新規案件
             </NavDropdownButton>
             <NavDropdownMenu>
               <NavDropdownItem>
@@ -282,12 +282,6 @@ function AdminApp() {
                 </NavDropdownLink>
               </NavDropdownItem>
               <NavDropdownItem>
-                <NavDropdownLink to="/continuation-management">
-                  <FiRepeat />
-                  継続管理
-                </NavDropdownLink>
-              </NavDropdownItem>
-              <NavDropdownItem>
                 <NavDropdownLink to="/weekly-report">
                   <FiClipboard />
                   週報
@@ -297,26 +291,20 @@ function AdminApp() {
           </NavDropdown>
           <NavDropdown>
             <NavDropdownButton>
-              <FiCalendar />
+              <FiBriefcase />
               案件管理
             </NavDropdownButton>
             <NavDropdownMenu>
               <NavDropdownItem>
-                <NavDropdownLink to="/posting-schedule">
-                  <FiCalendar />
-                  投稿本数管理
+                <NavDropdownLink to="/project-management">
+                  <FiBriefcase />
+                  既存案件
                 </NavDropdownLink>
               </NavDropdownItem>
               <NavDropdownItem>
-                <NavDropdownLink to="/posting-calendar">
-                  <FiGrid />
-                  投稿カレンダー
-                </NavDropdownLink>
-              </NavDropdownItem>
-              <NavDropdownItem>
-                <NavDropdownLink to="/task-progress">
-                  <FiCheckSquare />
-                  ToDo管理
+                <NavDropdownLink to="/next-action-management">
+                  <FiClipboard />
+                  ネクストアクション管理
                 </NavDropdownLink>
               </NavDropdownItem>
             </NavDropdownMenu>
@@ -351,6 +339,12 @@ function AdminApp() {
                   キャスティング管理
                 </NavDropdownLink>
               </NavDropdownItem>
+              <NavDropdownItem>
+                <NavDropdownLink to="/staff-master">
+                  <FiUser />
+                  人管理
+                </NavDropdownLink>
+              </NavDropdownItem>
             </NavDropdownMenu>
           </NavDropdown>
         </NavList>
@@ -373,9 +367,9 @@ function AdminApp() {
           <Route path="/if/register/:id" element={<InfluencerRegisterPage />} />
           <Route path="/if/list" element={<InfluencerListPage />} />
           <Route path="/casting/manage" element={<CastingManagePage />} />
-          <Route path="/posting-schedule" element={<PostingSchedulePage />} />
-          <Route path="/posting-calendar" element={<PostingCalendarPage />} />
-          <Route path="/task-progress" element={<TaskProgressPage />} />
+          <Route path="/project-management" element={<ProjectManagementPage />} />
+          <Route path="/staff-master" element={<StaffMasterPage />} />
+          <Route path="/next-action-management" element={<NextActionManagementPage />} />
           <Route path="/weekly-report" element={<WeeklyReportPage />} />
         </Routes>
       </MainContent>

@@ -130,3 +130,6 @@ export const FOLLOW_UP_PHASE_COLORS = {
   'フォロー4': '#3498db',
   'フォロー5': '#27ae60'
 };
+
+// 案件管理ランク
+export const PROJECT_RANKS = ['S', 'A', 'B', 'C'];
