@@ -136,18 +136,18 @@ const StatusButton = styled.button`
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: 2px solid ${props => props.$done ? '#27ae60' : '#ddd'};
+  border: 2px solid ${props => props.$done ? '#95a5a6' : '#ddd'};
   border-radius: 50%;
-  background: ${props => props.$done ? '#27ae60' : 'white'};
+  background: ${props => props.$done ? '#95a5a6' : 'white'};
   color: ${props => props.$done ? 'white' : '#bdc3c7'};
   cursor: pointer;
   flex-shrink: 0;
   margin-top: 0.1rem;
   transition: all 0.2s;
   &:hover {
-    border-color: ${props => props.$done ? '#e74c3c' : '#27ae60'};
-    color: ${props => props.$done ? 'white' : '#27ae60'};
-    background: ${props => props.$done ? '#e74c3c' : '#f0fff0'};
+    border-color: ${props => props.$done ? '#e74c3c' : '#8b0000'};
+    color: ${props => props.$done ? 'white' : '#8b0000'};
+    background: ${props => props.$done ? '#e74c3c' : '#fff5f5'};
   }
 `;
 
@@ -254,7 +254,7 @@ const NextActionManagementPage = () => {
       <FilterBar>
         <FilterLabel><FiFilter size={14} /> 表示:</FilterLabel>
         <FilterButton $active={!showDone} onClick={() => setShowDone(false)}>
-          未完了のみ ({activeCount})
+          todoのみ ({activeCount})
         </FilterButton>
         <FilterButton $active={showDone} onClick={() => setShowDone(true)}>
           すべて表示 ({activeCount + doneCount})
@@ -285,7 +285,7 @@ const NextActionManagementPage = () => {
                   <StatusButton
                     $done={isDone}
                     onClick={() => handleToggleStatus(na)}
-                    title={isDone ? '未完了に戻す' : '完了にする'}
+                    title={isDone ? 'todoに戻す' : '完了にする'}
                   >
                     {isDone ? <FiCheck size={16} /> : <FiCheck size={14} />}
                   </StatusButton>

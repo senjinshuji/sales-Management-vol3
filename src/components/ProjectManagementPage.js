@@ -34,8 +34,8 @@ const calcContinuationStatus = (records) => {
   const isPhase8 = latest.phase === 'フェーズ8';
   const isPhase1to7 = latest.phase && latest.phase !== 'フェーズ8' && latest.phase !== '失注';
 
-  // 継続成約: 最新行がフェーズ8 & startDateが未来
-  if (isPhase8 && startDate && startDate > today) {
+  // 継続成約: 最新行がフェーズ8 & startDateが未来 & レコード2件以上
+  if (isPhase8 && startDate && startDate > today && records.length >= 2) {
     return '継続成約';
   }
 
@@ -441,6 +441,7 @@ const ProjectManagementPage = () => {
                 <TableHeaderCell>代理店名</TableHeaderCell>
                 <TableHeaderCell>商材名</TableHeaderCell>
                 <TableHeaderCell>提案メニュー</TableHeaderCell>
+                <TableHeaderCell>運用ランク</TableHeaderCell>
                 <TableHeaderCell $sortable onClick={() => handleSort('totalSales')}>
                   累計売上{renderSortIcon('totalSales')}
                 </TableHeaderCell>
@@ -464,6 +465,7 @@ const ProjectManagementPage = () => {
                   <TableCell>{p.introducer || '-'}</TableCell>
                   <TableCell>{p.productName || '-'}</TableCell>
                   <TableCell>{p.proposalMenu || '-'}</TableCell>
+                  <TableCell>{p.rank || '-'}</TableCell>
                   <TableCell>{p.totalSales ? formatCurrency(p.totalSales) : '-'}</TableCell>
                   <TableCell>
                     {p.continuationStatus ? (

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { FiX, FiPlus, FiTrash2, FiEdit2, FiSend, FiChevronDown, FiChevronRight } from 'react-icons/fi';
 import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { PROJECT_RANKS, STATUSES, STATUS_COLORS } from '../data/constants.js';
+import { PROJECT_RANKS, STATUSES, STATUS_COLORS, CONTINUATION_STATUS_COLORS } from '../data/constants.js';
 import { fetchAllStaff } from '../services/staffService.js';
 import {
   updateProject,
@@ -1150,11 +1150,11 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
                       fontSize: '0.7rem',
                       fontWeight: 600,
                       color: 'white',
-                      background: entry.actionStatus === 'done' ? '#27ae60' : '#3498db',
+                      background: entry.actionStatus === 'done' ? '#95a5a6' : '#8b0000',
                       marginLeft: 'auto'
                     }}
                   >
-                    {entry.actionStatus === 'done' ? 'Done' : '施策実施中'}
+                    {entry.actionStatus === 'done' ? 'Done' : 'todo'}
                   </span>
                 </SubSectionTitle>
                 <ActionContent style={{
@@ -1662,6 +1662,24 @@ const ProjectDetailPanel = ({ project, onClose, onProjectUpdate }) => {
               <HeaderLabel>商材名</HeaderLabel>
               <HeaderValue>{project.productName || '-'}</HeaderValue>
             </HeaderItem>
+            {project.continuationStatus && (
+              <HeaderItem>
+                <HeaderLabel>継続ステータス</HeaderLabel>
+                <HeaderValue>
+                  <span style={{
+                    display: 'inline-block',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    color: 'white',
+                    background: CONTINUATION_STATUS_COLORS[project.continuationStatus] || '#95a5a6'
+                  }}>
+                    {project.continuationStatus}
+                  </span>
+                </HeaderValue>
+              </HeaderItem>
+            )}
           </HeaderGrid>
         </PanelHeader>
 

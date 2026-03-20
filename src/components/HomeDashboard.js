@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import styled from 'styled-components';
 import { FiTarget, FiTrendingUp, FiBarChart, FiUsers, FiAlertTriangle, FiPieChart, FiEdit2, FiDollarSign, FiUser } from 'react-icons/fi';
 import { db } from '../firebase.js';
@@ -602,6 +603,7 @@ const FunnelValue = styled.div`
 `;
 
 function HomeDashboard() {
+  const location = useLocation();
   const [isLoading, setIsLoading] = useState(true);
   const [deals, setDeals] = useState([]);
   const [quarterTarget, setQuarterTarget] = useState(10000000); // デフォルト目標値
@@ -989,7 +991,7 @@ function HomeDashboard() {
   useEffect(() => {
     fetchData();
     fetchTarget();
-  }, [fetchData, fetchTarget]);
+  }, [fetchData, fetchTarget, location.key]);
 
   // 担当者リストを取得（SALES_REPRESENTATIVESを使用）
   const representativeList = useMemo(() => {
