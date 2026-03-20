@@ -1154,7 +1154,7 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
                       marginLeft: 'auto'
                     }}
                   >
-                    {entry.actionStatus === 'done' ? 'Done' : 'Active'}
+                    {entry.actionStatus === 'done' ? 'Done' : '施策実施中'}
                   </span>
                 </SubSectionTitle>
                 <ActionContent style={{

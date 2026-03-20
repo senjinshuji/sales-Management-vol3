@@ -362,7 +362,7 @@ export const fetchOperationMemos = async (projectId) => {
       .sort((a, b) => {
         const aTime = a.createdAt?.toMillis?.() || 0;
         const bTime = b.createdAt?.toMillis?.() || 0;
-        return aTime - bTime;
+        return bTime - aTime;
       });
   } catch (error) {
     console.error('Failed to fetch operation memos:', error);
