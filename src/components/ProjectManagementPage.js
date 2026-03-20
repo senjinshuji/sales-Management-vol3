@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import styled from 'styled-components';
-import { FiSearch, FiChevronDown, FiChevronUp, FiPlus } from 'react-icons/fi';
+import { FiSearch, FiChevronDown, FiChevronUp, FiPlus, FiTrash2, FiUpload } from 'react-icons/fi';
 import { db } from '../firebase.js';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { fetchProjects, fetchProjectSalesData } from '../services/projectService.js';
 import { CONTINUATION_STATUS_COLORS } from '../data/constants.js';
 import ProjectDetailPanel from './ProjectDetailPanel.js';
@@ -389,6 +390,7 @@ const ModalBtn = styled.button`
 // ============================================
 
 const ProjectManagementPage = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [projects, setProjects] = useState([]);
   const [salesDataMap, setSalesDataMap] = useState({});
   const [isLoading, setIsLoading] = useState(true);
@@ -398,8 +400,10 @@ const ProjectManagementPage = () => {
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showCsvGuide, setShowCsvGuide] = useState(false);
   const [addForm, setAddForm] = useState({ companyName: '', introducer: '', productName: '' });
   const [isSaving, setIsSaving] = useState(false);
+  const initialOpenDone = useRef(false);
 
   // プロジェクト取得
   const loadProjects = useCallback(async () => {
@@ -427,6 +431,19 @@ const ProjectManagementPage = () => {
   useEffect(() => {
     loadProjects();
   }, [loadProjects]);
+
+  // URLの?id=xxxからパネルを自動で開く
+  useEffect(() => {
+    if (initialOpenDone.current || projects.length === 0) return;
+    const projectId = searchParams.get('id');
+    if (projectId) {
+      const target = projects.find(p => p.id === projectId);
+      if (target) {
+        setSelectedProject(target);
+        initialOpenDone.current = true;
+      }
+    }
+  }, [projects, searchParams]);
 
   // ソートハンドラー
   const handleSort = (key) => {
@@ -488,11 +505,13 @@ const ProjectManagementPage = () => {
       });
     }
 
-    // デフォルトは作成日の降順（新しい案件が上）
+    // デフォルトは更新日の降順（フェーズ8に変更された順、なければ作成日）
     result = [...result].sort((a, b) => {
-      const aTime = a.createdAt?.toMillis?.() || a.createdAt?.seconds * 1000 || 0;
-      const bTime = b.createdAt?.toMillis?.() || b.createdAt?.seconds * 1000 || 0;
-      return bTime - aTime;
+      const getTime = (p) => {
+        if (p.updatedAt) return p.updatedAt.toMillis?.() || p.updatedAt.seconds * 1000 || 0;
+        return p.createdAt?.toMillis?.() || p.createdAt?.seconds * 1000 || 0;
+      };
+      return getTime(b) - getTime(a);
     });
 
     // ソート
@@ -525,22 +544,21 @@ const ProjectManagementPage = () => {
     return null;
   };
 
-  // 会社名の一覧（重複排除）
+  // 会社名の一覧（重複排除、空や「-」を除外）
   const companyList = useMemo(() => {
-    const names = [...new Set(projects.map(p => p.companyName).filter(Boolean))];
+    const names = [...new Set(projects.map(p => p.companyName).filter(v => v && v !== '-'))];
     return names.sort();
   }, [projects]);
 
   // 選択された会社に紐づく代理店一覧
   const agencyListForCompany = useMemo(() => {
-    if (!addForm.companyName) return [];
-    const agencies = [...new Set(
-      projects
-        .filter(p => p.companyName === addForm.companyName)
-        .map(p => p.introducer || p.agencyName)
-        .filter(Boolean)
-    )];
-    return agencies.sort();
+    if (!addForm.companyName) return { agencies: [], hasEmpty: false };
+    const raw = projects
+      .filter(p => p.companyName === addForm.companyName)
+      .map(p => p.introducer || p.agencyName || '');
+    const hasEmpty = raw.some(v => !v || v === '-');
+    const agencies = [...new Set(raw.filter(v => v && v !== '-'))].sort();
+    return { agencies, hasEmpty };
   }, [projects, addForm.companyName]);
 
   // 新規案件追加
@@ -550,7 +568,7 @@ const ProjectManagementPage = () => {
       setIsSaving(true);
       await addDoc(collection(db, 'progressDashboard'), {
         companyName: addForm.companyName,
-        introducer: addForm.introducer,
+        introducer: addForm.introducer === '__none__' ? '' : addForm.introducer,
         productName: addForm.productName.trim(),
         status: 'フェーズ8',
         isExistingProject: true,
@@ -564,6 +582,61 @@ const ProjectManagementPage = () => {
       alert('案件の追加に失敗しました');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // 案件削除（既存案件ボタンから追加したもののみ）
+  const handleDeleteProject = async (e, projectId) => {
+    e.stopPropagation();
+    if (!window.confirm('この案件を削除しますか？')) return;
+    try {
+      await deleteDoc(doc(db, 'progressDashboard', projectId));
+      await loadProjects();
+    } catch (error) {
+      console.error('Failed to delete project:', error);
+      alert('削除に失敗しました');
+    }
+  };
+
+  // CSV一括取り込み
+  const handleCsvImport = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = '';
+
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).filter(line => line.trim());
+
+    // ヘッダー行をスキップ（会社名,代理店名,商材名 のような行）
+    const startIdx = lines[0].includes('会社名') ? 1 : 0;
+    const rows = lines.slice(startIdx).map(line => {
+      const cols = line.split(',').map(c => c.trim());
+      return { companyName: cols[0] || '', introducer: cols[1] || '', productName: cols[2] || '' };
+    }).filter(r => r.companyName && r.productName);
+
+    if (rows.length === 0) {
+      alert('取り込めるデータがありません。\nCSVフォーマット: 会社名,代理店名,商材名');
+      return;
+    }
+
+    if (!window.confirm(`${rows.length}件の案件を一括追加しますか？`)) return;
+
+    try {
+      for (const row of rows) {
+        await addDoc(collection(db, 'progressDashboard'), {
+          companyName: row.companyName,
+          introducer: row.introducer === '-' ? '' : row.introducer,
+          productName: row.productName,
+          status: 'フェーズ8',
+          isExistingProject: true,
+          createdAt: serverTimestamp()
+        });
+      }
+      alert(`${rows.length}件を追加しました`);
+      await loadProjects();
+    } catch (error) {
+      console.error('CSV import failed:', error);
+      alert('CSV取り込みに失敗しました');
     }
   };
 
@@ -581,9 +654,14 @@ const ProjectManagementPage = () => {
     <PageContainer>
       <PageHeader>
         <Title>既存案件</Title>
-        <AddButton onClick={() => setShowAddModal(true)}>
-          <FiPlus size={14} />新規追加
-        </AddButton>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <AddButton onClick={() => setShowCsvGuide(true)}>
+            <FiUpload size={14} />CSV取込
+          </AddButton>
+          <AddButton onClick={() => setShowAddModal(true)}>
+            <FiPlus size={14} />新規追加
+          </AddButton>
+        </div>
       </PageHeader>
 
       <SearchInputWrapper>
@@ -622,13 +700,14 @@ const ProjectManagementPage = () => {
                 <TableHeaderCell $sortable onClick={() => handleSort('latestNaDueDate')}>
                   期日{renderSortIcon('latestNaDueDate')}
                 </TableHeaderCell>
+                <TableHeaderCell style={{ width: '40px' }}></TableHeaderCell>
               </tr>
             </TableHead>
             <tbody>
               {filteredProjects.map((p) => (
                 <TableRow
                   key={p.id}
-                  onClick={() => setSelectedProject(p)}
+                  onClick={() => { setSelectedProject(p); setSearchParams({ id: p.id }); }}
                 >
                   <TableCell style={{ fontWeight: 500 }}>{p.companyName || '-'}</TableCell>
                   <TableCell>{p.introducer || '-'}</TableCell>
@@ -668,6 +747,14 @@ const ProjectManagementPage = () => {
                     {p.latestNaDueDate || '-'}
                     {renderDueDateBadge(p.latestNaDueDate)}
                   </TableCell>
+                  <TableCell>
+                    <FiTrash2
+                      size={14}
+                      style={{ color: '#e74c3c', cursor: 'pointer' }}
+                      onClick={(e) => handleDeleteProject(e, p.id)}
+                      title="削除"
+                    />
+                  </TableCell>
                 </TableRow>
               ))}
             </tbody>
@@ -684,6 +771,38 @@ const ProjectManagementPage = () => {
             <NaModalClose onClick={() => setNaModalText(null)}>閉じる</NaModalClose>
           </NaModalContent>
         </NaModal>
+      )}
+
+      {/* CSVガイドモーダル */}
+      {showCsvGuide && (
+        <ModalOverlay onClick={() => setShowCsvGuide(false)}>
+          <ModalBox onClick={(e) => e.stopPropagation()}>
+            <ModalTitle>CSV一括取り込み</ModalTitle>
+            <div style={{ fontSize: '0.85rem', color: '#2c3e50', lineHeight: 1.8 }}>
+              <p style={{ margin: '0 0 0.75rem', fontWeight: 600 }}>CSVフォーマット</p>
+              <div style={{ background: '#f8f9fa', padding: '0.5rem 0.75rem', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.8rem', marginBottom: '1rem' }}>
+                会社名,代理店名,商材名
+              </div>
+              <ul style={{ margin: '0 0 1rem', paddingLeft: '1.25rem' }}>
+                <li>ヘッダー行あり/なし両方に対応</li>
+                <li>代理店名が「-」または空欄の場合は空欄として登録</li>
+                <li>取り込み前に件数確認ダイアログが表示されます</li>
+              </ul>
+            </div>
+            <ModalActions>
+              <ModalBtn onClick={() => setShowCsvGuide(false)}>キャンセル</ModalBtn>
+              <ModalBtn $primary as="label" style={{ cursor: 'pointer' }}>
+                ファイルを選択
+                <input
+                  type="file"
+                  accept=".csv"
+                  style={{ display: 'none' }}
+                  onChange={(e) => { setShowCsvGuide(false); handleCsvImport(e); }}
+                />
+              </ModalBtn>
+            </ModalActions>
+          </ModalBox>
+        </ModalOverlay>
       )}
 
       {/* 新規追加モーダル */}
@@ -711,7 +830,10 @@ const ProjectManagementPage = () => {
                 disabled={!addForm.companyName}
               >
                 <option value="">選択してください</option>
-                {agencyListForCompany.map(name => (
+                {agencyListForCompany.hasEmpty && (
+                  <option value="__none__">直接取引（代理店なし）</option>
+                )}
+                {agencyListForCompany.agencies.map(name => (
                   <option key={name} value={name}>{name}</option>
                 ))}
               </FormSelect>
@@ -743,7 +865,7 @@ const ProjectManagementPage = () => {
       {selectedProject && (
         <ProjectDetailPanel
           project={selectedProject}
-          onClose={() => { setSelectedProject(null); loadProjects(); }}
+          onClose={() => { setSelectedProject(null); setSearchParams({}); loadProjects(); }}
           onProjectUpdate={handleProjectUpdate}
         />
       )}
