@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import styled from 'styled-components';
 import { FiSearch, FiChevronDown, FiChevronUp, FiPlus, FiTrash2, FiUpload, FiEdit3 } from 'react-icons/fi';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { STATUS_COLORS, SALES_REPRESENTATIVES, STATUSES, LEAD_SOURCES } from '../data/constants.js';
 import { db } from '../firebase.js';
 import { collection, query, orderBy, getDocs, deleteDoc, doc, updateDoc, serverTimestamp, addDoc, setDoc } from 'firebase/firestore';
@@ -480,6 +480,8 @@ function ProgressDashboard() {
     introducer: false
   });
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialOpenDone = useRef(false);
   const { recordAction } = useUndoContext();
 
   // パートナー向けかどうかを判定
@@ -536,6 +538,19 @@ function ProgressDashboard() {
   useEffect(() => {
     fetchProgressData();
   }, [location.pathname]);
+
+  // URLの?id=xxxからパネルを自動で開く
+  useEffect(() => {
+    if (initialOpenDone.current || deals.length === 0) return;
+    const dealId = searchParams.get('id');
+    if (dealId) {
+      const target = deals.find(d => d.id === dealId);
+      if (target) {
+        setSelectedDeal(target);
+        initialOpenDone.current = true;
+      }
+    }
+  }, [deals, searchParams]);
 
   const fetchProgressData = async () => {
     let progressItems = [];
@@ -968,6 +983,7 @@ function ProgressDashboard() {
   // パネルクローズ時にデータを再取得
   const handlePanelClose = () => {
     setSelectedDeal(null);
+    setSearchParams({});
     fetchProgressData();
   };
 
@@ -1148,7 +1164,7 @@ function ProgressDashboard() {
                 return (
                   <TableRow
                     key={deal.id}
-                    onClick={() => setSelectedDeal(deal)}
+                    onClick={() => { setSelectedDeal(deal); setSearchParams({ id: deal.id }); }}
                   >
                     <TableCell style={{ fontWeight: 500 }}>{deal.companyName || '-'}</TableCell>
                     <TableCell>{deal.introducer || '-'}</TableCell>

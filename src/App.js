@@ -252,18 +252,6 @@ function AdminApp() {
             </NavDropdownButton>
             <NavDropdownMenu>
               <NavDropdownItem>
-                <NavDropdownLink to="/log-entry">
-                  <FiPlus />
-                  アクションログ記録
-                </NavDropdownLink>
-              </NavDropdownItem>
-              <NavDropdownItem>
-                <NavDropdownLink to="/action-logs">
-                  <FiFileText />
-                  ログ一覧
-                </NavDropdownLink>
-              </NavDropdownItem>
-              <NavDropdownItem>
                 <NavDropdownLink to="/progress-dashboard">
                   <FiList />
                   新規案件一覧
