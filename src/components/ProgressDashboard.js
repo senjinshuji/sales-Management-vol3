@@ -1,28 +1,132 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import styled from 'styled-components';
-import { FiFilter, FiSearch, FiEye, FiCalendar, FiUser, FiTag, FiPlus, FiTrash2, FiEdit3, FiChevronUp, FiChevronDown, FiMinus, FiCheck, FiCopy } from 'react-icons/fi';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { mockDeals, introducers } from '../data/mockData.js';
+import { FiSearch, FiChevronDown, FiChevronUp, FiPlus, FiTrash2, FiUpload, FiEdit3 } from 'react-icons/fi';
+import { useLocation } from 'react-router-dom';
 import { STATUS_COLORS, SALES_REPRESENTATIVES, STATUSES, LEAD_SOURCES } from '../data/constants.js';
 import { db } from '../firebase.js';
 import { collection, query, orderBy, getDocs, deleteDoc, doc, updateDoc, serverTimestamp, addDoc, setDoc } from 'firebase/firestore';
 import ReceivedOrderModal from './ReceivedOrderModal.js';
-import { updateDealOrderInfo } from '../services/salesService.js';
+
+import { addSalesRecord } from '../services/projectService.js';
 import { useUndoContext } from '../contexts/UndoContext.js';
+import ProjectDetailPanel from './ProjectDetailPanel.js';
 
-const DashboardContainer = styled.div`
-  width: 100%;
-  padding: 0 2rem;
+// ============================================
+// 定数
+// ============================================
+
+const HOVER_COLOR = '#f0f7ff';
+const NA_TRUNCATE_LENGTH = 40;
+const RANKS = ['S', 'A', 'B', 'C'];
+const ELAPSED_DAYS_THRESHOLD = 90;
+
+/** 全営業レコードの全エントリからアクティブな最新NAを取得 */
+const NEW_CASE_SUB_COL = 'newCaseSalesRecords';
+
+/** 新規案件用: NA + 最新フェーズを取得。newCaseSalesRecords優先、なければsalesRecordsフォールバック */
+const fetchSalesInfo = async (dealId) => {
+  // 指定コレクションからレコード＋エントリを取得するヘルパー
+  const collectData = async (subColName) => {
+    const recordsRef = collection(db, 'progressDashboard', dealId, subColName);
+    const recordsSnap = await getDocs(recordsRef);
+    if (recordsSnap.empty) return { records: [], entries: [] };
+    const records = recordsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const entries = [];
+    await Promise.all(
+      recordsSnap.docs.map(async (recDoc) => {
+        const entriesRef = collection(db, 'progressDashboard', dealId, subColName, recDoc.id, 'entries');
+        const entriesSnap = await getDocs(entriesRef);
+        entriesSnap.docs.forEach((entDoc) => {
+          entries.push({ id: entDoc.id, ...entDoc.data() });
+        });
+      })
+    );
+    return { records, entries };
+  };
+
+  try {
+    // まずnewCaseSalesRecordsを確認
+    let { records, entries } = await collectData(NEW_CASE_SUB_COL);
+
+    // なければ旧salesRecordsからもフォールバック参照
+    if (records.length === 0 && entries.length === 0) {
+      ({ records, entries } = await collectData('salesRecords'));
+    }
+
+    // 最新レコードのフェーズを取得
+    let latestPhase = null;
+    if (records.length > 0) {
+      records.sort((a, b) => {
+        const aTime = a.createdAt?.toMillis?.() || a.createdAt?.seconds * 1000 || 0;
+        const bTime = b.createdAt?.toMillis?.() || b.createdAt?.seconds * 1000 || 0;
+        return bTime - aTime;
+      });
+      latestPhase = records[0].phase || null;
+    }
+
+    // 最新アクティブNA
+    let naEntry = null;
+    if (entries.length > 0) {
+      entries.sort((a, b) => {
+        const aTime = a.createdAt?.toMillis?.() || a.createdAt?.seconds * 1000 || 0;
+        const bTime = b.createdAt?.toMillis?.() || b.createdAt?.seconds * 1000 || 0;
+        return bTime - aTime;
+      });
+      naEntry = entries.find(e => e.actionContent && e.actionStatus !== 'done') || null;
+    }
+
+    return { naEntry, latestPhase };
+  } catch (error) {
+    console.error('Failed to fetch sales info:', error);
+    return { naEntry: null, latestPhase: null };
+  }
+};
+
+// ============================================
+// ユーティリティ
+// ============================================
+
+/** 経過日数を計算（createdAtから） */
+const calcElapsedDays = (createdAt) => {
+  if (!createdAt) return null;
+  const created = createdAt.toDate ? createdAt.toDate() : new Date(createdAt);
+  if (isNaN(created.getTime())) return null;
+  const diff = Math.floor((new Date() - created) / (1000 * 60 * 60 * 24));
+  return diff;
+};
+
+/** 期日バッジタイプを判定 */
+const getDateStatus = (dateString) => {
+  if (!dateString) return null;
+  const nextActionDate = new Date(dateString);
+  nextActionDate.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (nextActionDate < today) return 'overdue';
+  const twoDaysFromToday = new Date(today.getTime() + 2 * 24 * 60 * 60 * 1000);
+  if (nextActionDate <= twoDaysFromToday) return 'urgent';
+  return null;
+};
+
+// ============================================
+// Styled Components
+// ============================================
+
+const PageContainer = styled.div`
+  max-width: 1800px;
+  margin: 0 auto;
 `;
 
-const Header = styled.div`
+const PageHeader = styled.div`
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 2rem;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
 `;
 
-const Title = styled.h2`
+const Title = styled.h1`
+  font-size: 1.5rem;
+  font-weight: 700;
   color: #2c3e50;
   margin: 0;
 `;
@@ -32,7 +136,7 @@ const FilterSection = styled.div`
   padding: 1.5rem;
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
 `;
 
 const FilterGrid = styled.div`
@@ -43,28 +147,12 @@ const FilterGrid = styled.div`
 `;
 
 const SearchInput = styled.input`
-  padding: 0.75rem;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
   border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 1rem;
-  
-  &:focus {
-    outline: none;
-    border-color: #3498db;
-  }
-`;
-
-const Select = styled.select`
-  padding: 0.75rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 1rem;
-  background: white;
-  
-  &:focus {
-    outline: none;
-    border-color: #3498db;
-  }
+  border-radius: 6px;
+  font-size: 0.875rem;
+  &:focus { outline: none; border-color: #3498db; }
 `;
 
 const FilterDropdownContainer = styled.div`
@@ -73,25 +161,18 @@ const FilterDropdownContainer = styled.div`
 
 const FilterDropdownButton = styled.button`
   width: 100%;
-  padding: 0.75rem;
+  padding: 0.6rem 0.75rem;
   border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 1rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
   background: white;
   text-align: left;
   cursor: pointer;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  
-  &:focus {
-    outline: none;
-    border-color: #3498db;
-  }
-  
-  &:hover {
-    background-color: #f5f5f5;
-  }
+  &:focus { outline: none; border-color: #3498db; }
+  &:hover { background-color: #f5f5f5; }
 `;
 
 const FilterDropdownList = styled.div`
@@ -118,14 +199,8 @@ const FilterCheckboxItem = styled.label`
   align-items: center;
   padding: 0.5rem;
   cursor: pointer;
-  
-  &:hover {
-    background-color: #f5f5f5;
-  }
-  
-  input {
-    margin-right: 0.5rem;
-  }
+  &:hover { background-color: #f5f5f5; }
+  input { margin-right: 0.5rem; }
 `;
 
 const FilterToggleAllButton = styled.button`
@@ -135,248 +210,243 @@ const FilterToggleAllButton = styled.button`
   background: #f0f0f0;
   cursor: pointer;
   font-size: 0.875rem;
-  
-  &:hover {
-    background: #e0e0e0;
-  }
+  &:hover { background: #e0e0e0; }
 `;
 
 const TableContainer = styled.div`
-  width: 100%;
-  overflow-x: auto;
-  background: white;
+  background: #ffffff;
   border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  
-  /* スクロールバーのスタイリング */
-  &::-webkit-scrollbar {
-    height: 8px;
-  }
-  
-  &::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 4px;
-  }
-  
-  &::-webkit-scrollbar-thumb {
-    background: #888;
-    border-radius: 4px;
-    
-    &:hover {
-      background: #555;
-    }
-  }
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  overflow-x: auto;
+  &::-webkit-scrollbar { height: 8px; }
+  &::-webkit-scrollbar-track { background: #f1f1f1; }
+  &::-webkit-scrollbar-thumb { background: #bdc3c7; border-radius: 4px; }
 `;
 
 const Table = styled.table`
-  min-width: 1800px; /* 最小幅を設定して横スクロールを発生させる（流入経路列追加） */
   width: 100%;
-  background: white;
   border-collapse: collapse;
 `;
 
-const TableHeader = styled.thead`
+const TableHead = styled.thead`
   background: #f8f9fa;
+`;
+
+const TableHeaderCell = styled.th`
+  padding: 0.75rem;
+  text-align: left;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #7f8c8d;
+  white-space: nowrap;
+  border-bottom: 2px solid #e9ecef;
+  cursor: ${props => props.$sortable ? 'pointer' : 'default'};
+  user-select: none;
+  &:hover {
+    ${props => props.$sortable && 'color: #2c3e50;'}
+  }
+`;
+
+const SortIcon = styled.span`
+  margin-left: 0.25rem;
+  display: inline-flex;
+  vertical-align: middle;
 `;
 
 const TableRow = styled.tr`
   border-bottom: 1px solid #eee;
-  
-  &:hover {
-    background: #f8f9fa;
-  }
-`;
-
-const TableHeaderCell = styled.th`
-  padding: 1rem;
-  text-align: left;
-  font-weight: 600;
-  color: #2c3e50;
-  cursor: ${props => props.sortable ? 'pointer' : 'default'};
-  user-select: none;
-  position: relative;
-  
-  &:hover {
-    background-color: ${props => props.sortable ? '#f0f0f0' : 'transparent'};
-  }
-  
-  .sort-indicator {
-    margin-left: 0.5rem;
-    font-size: 0.8rem;
-    color: #666;
-  }
+  cursor: pointer;
+  &:hover { background: ${HOVER_COLOR}; }
 `;
 
 const TableCell = styled.td`
-  padding: 1rem;
+  padding: 0.75rem;
+  font-size: 0.85rem;
+  color: #2c3e50;
   vertical-align: middle;
 `;
 
-const StatusBadge = styled.span`
-  padding: 0.25rem 0.75rem;
-  border-radius: 20px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: white;
-  background-color: ${props => STATUS_COLORS[props.status] || '#95a5a6'};
+const NaText = styled.div`
+  font-size: 0.8rem;
+  color: #2c3e50;
+  max-width: 200px;
 `;
 
-const ActionButton = styled.button`
-  padding: 0.5rem 0.75rem;
-  border: none;
-  border-radius: 4px;
+const MoreLink = styled.span`
+  color: #3498db;
+  font-size: 0.75rem;
   cursor: pointer;
+  margin-left: 0.25rem;
+  &:hover { text-decoration: underline; }
+`;
+
+const DueDateBadge = styled.span`
+  display: inline-block;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: white;
+  margin-left: 0.25rem;
+  background: ${props => props.$type === 'urgent' ? '#e74c3c' : '#9b59b6'};
+`;
+
+const AddButton = styled.button`
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  transition: all 0.3s ease;
-  
-  &.view {
-    background: #3498db;
-    color: white;
-    
-    &:hover {
-      background: #2980b9;
-    }
-  }
-  
-  &.add {
-    background: #27ae60;
-    color: white;
-    
-    &:hover {
-      background: #219a52;
-    }
-  }
-  
-  &.edit {
-    background: #f39c12;
-    color: white;
-
-    &:hover {
-      background: #e67e22;
-    }
-  }
-
-  &.copy {
-    background: #9b59b6;
-    color: white;
-
-    &:hover {
-      background: #8e44ad;
-    }
-  }
-`;
-
-const UrgentBadge = styled.span`
-  background: #e74c3c;
-  color: white;
-  padding: 0.125rem 0.5rem;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  margin-left: 0.5rem;
-`;
-
-const OverdueBadge = styled.span`
-  background: #8e44ad;
-  color: white;
-  padding: 0.125rem 0.5rem;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  margin-left: 0.5rem;
-`;
-
-const DeleteButton = styled.button`
-  padding: 0.5rem 0.75rem;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
   border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  background: #e74c3c;
+  border-radius: 6px;
+  background: #3498db;
   color: white;
-  margin-left: 0.5rem;
-  transition: all 0.3s ease;
-  
-  &:hover {
-    background: #c0392b;
-  }
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  &:hover { opacity: 0.9; }
 `;
 
-
-const Modal = styled.div`
+const ModalOverlay = styled.div`
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 2000;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
 `;
 
-const ModalContent = styled.div`
+const ModalBox = styled.div`
   background: white;
-  padding: 2rem;
   border-radius: 8px;
-  max-width: 500px;
-  width: 90%;
+  padding: 1.5rem;
+  width: 480px;
+  max-width: 90%;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
 `;
 
 const ModalTitle = styled.h3`
-  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  font-weight: 600;
   color: #2c3e50;
+  margin: 0 0 1.25rem;
 `;
 
-const ModalText = styled.p`
-  margin: 0 0 1.5rem 0;
-  color: #555;
+const FormGroup = styled.div`
+  margin-bottom: 1rem;
 `;
 
-const ModalButtons = styled.div`
+const FormLabel = styled.label`
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #7f8c8d;
+  margin-bottom: 0.3rem;
+`;
+
+const FormSelect = styled.select`
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  &:focus { outline: none; border-color: #3498db; }
+`;
+
+const FormInput = styled.input`
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  box-sizing: border-box;
+  &:focus { outline: none; border-color: #3498db; }
+`;
+
+const ModalActions = styled.div`
   display: flex;
-  gap: 1rem;
   justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
 `;
 
-const ModalButton = styled.button`
-  padding: 0.75rem 1.5rem;
+const ModalBtn = styled.button`
+  padding: 0.5rem 1.25rem;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
+  font-size: 0.85rem;
   cursor: pointer;
-  font-weight: 500;
-  transition: all 0.3s ease;
-  
-  &.cancel {
-    background: #e0e0e0;
-    color: #333;
-    
-    &:hover {
-      background: #bdbdbd;
-    }
-  }
-  
-  &.delete {
-    background: #e74c3c;
-    color: white;
-    
-    &:hover {
-      background: #c0392b;
-    }
-  }
+  font-weight: 600;
+  background: ${props => props.$primary ? '#3498db' : '#e9ecef'};
+  color: ${props => props.$primary ? 'white' : '#2c3e50'};
+  &:hover { opacity: 0.9; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
 `;
 
-const ActionsCell = styled.div`
+const NaModal = styled.div`
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 2000;
   display: flex;
   align-items: center;
+  justify-content: center;
 `;
+
+const NaModalContent = styled.div`
+  background: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  max-width: 500px;
+  width: 90%;
+  max-height: 60vh;
+  overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+`;
+
+const NaModalTitle = styled.h3`
+  font-size: 1rem;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0 0 1rem;
+`;
+
+const NaModalText = styled.div`
+  font-size: 0.9rem;
+  color: #2c3e50;
+  white-space: pre-wrap;
+  line-height: 1.6;
+`;
+
+const NaModalClose = styled.button`
+  margin-top: 1rem;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  background: #3498db;
+  color: white;
+  cursor: pointer;
+  font-size: 0.85rem;
+  &:hover { opacity: 0.9; }
+`;
+
+const LoadingText = styled.div`
+  text-align: center;
+  padding: 3rem;
+  color: #95a5a6;
+  font-size: 1rem;
+`;
+
+const EmptyText = styled.div`
+  text-align: center;
+  padding: 3rem;
+  color: #95a5a6;
+  font-size: 0.9rem;
+`;
+
+// ============================================
+// メインコンポーネント
+// ============================================
 
 function ProgressDashboard() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -391,608 +461,424 @@ function ProgressDashboard() {
   const [proposalMenusList, setProposalMenusList] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'none' });
+  const [naDataMap, setNaDataMap] = useState({});
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState('asc');
+  const [selectedDeal, setSelectedDeal] = useState(null);
+  const [naModalText, setNaModalText] = useState(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showCsvGuide, setShowCsvGuide] = useState(false);
+  const [addForm, setAddForm] = useState({
+    companyName: '', introducer: '', productName: '',
+    leadSource: '', representative: '', status: 'フェーズ1',
+    expectedBudget: '', rank: ''
+  });
+  const [isSaving, setIsSaving] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState({
     status: false,
     representative: false,
     introducer: false
   });
-  const navigate = useNavigate();
   const location = useLocation();
   const { recordAction } = useUndoContext();
-  
+
   // パートナー向けかどうかを判定
-  const isPartnerView = window.location.pathname.startsWith('/partner') || 
+  const isPartnerView = window.location.pathname.startsWith('/partner') ||
                        window.location.pathname.startsWith('/partner-entry');
-  
-  // パートナー会社を判定
-  const getPartnerCompany = () => {
-    const path = window.location.pathname;
-    if (path.startsWith('/partner-entry/piala')) {
-      return '株式会社ピアラ';
-    }
-    return null;
-  };
-  
-  const partnerCompany = getPartnerCompany();
-  
-  // Firestoreから進捗データを取得
+
+  // Firestoreからデータ取得
   useEffect(() => {
     fetchProgressData();
     fetchIntroducers();
     fetchProposalMenus();
   }, []);
 
-  // 提案メニューマスターを取得
+  // 紹介者マスター取得
+  const fetchIntroducers = async () => {
+    try {
+      const ref = collection(db, 'introducers');
+      const q = query(ref, orderBy('createdAt', 'desc'));
+      const snap = await getDocs(q);
+      setIntroducersList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (error) {
+      console.error('Failed to fetch introducers:', error);
+    }
+  };
+
+  // 提案メニューマスター取得
   const fetchProposalMenus = async () => {
     try {
-      const menusRef = collection(db, 'proposalMenus');
-      const snapshot = await getDocs(menusRef);
-      const menus = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      // name順でソート
+      const snap = await getDocs(collection(db, 'proposalMenus'));
+      const menus = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       menus.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
       setProposalMenusList(menus);
     } catch (error) {
-      console.error('提案メニュー取得エラー:', error);
+      console.error('Failed to fetch proposal menus:', error);
     }
   };
-  
+
   // ページがフォーカスされた時に自動リロード
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        console.log('🔄 ProgressDashboard: ページがアクティブになったため、データを再取得');
-        fetchProgressData();
-      }
+      if (!document.hidden) fetchProgressData();
     };
-    
-    const handleFocus = () => {
-      console.log('🔄 ProgressDashboard: ウィンドウがフォーカスされたため、データを再取得');
-      fetchProgressData();
-    };
-    
+    const handleFocus = () => fetchProgressData();
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', handleFocus);
-    
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleFocus);
     };
   }, []);
-  
+
   // ルート変更時にもデータを再取得
   useEffect(() => {
-    console.log('🔄 ProgressDashboard: ルート変更検知、データ再取得');
     fetchProgressData();
   }, [location.pathname]);
-  
+
   const fetchProgressData = async () => {
+    let progressItems = [];
     try {
       setIsLoading(true);
-      console.log('📊 Firestoreから進捗データ取得開始');
-      
       const progressRef = collection(db, 'progressDashboard');
       const q = query(progressRef, orderBy('updatedAt', 'desc'));
       const querySnapshot = await getDocs(q);
-      
-      const progressItems = [];
+
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
         progressItems.push({
           id: docSnap.id,
           ...data,
-          // 日付フィールドの統一処理
-          lastContactDate: data.lastContactDate?.toDate?.()?.toLocaleDateString('ja-JP') || 
+          lastContactDate: data.lastContactDate?.toDate?.()?.toLocaleDateString('ja-JP') ||
                           data.lastContactDate || null,
           nextActionDate: data.nextActionDate || null,
+          // createdAtの生データを保持（経過日数計算用）
+          createdAtRaw: data.createdAt,
           createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
           updatedAt: data.updatedAt?.toDate?.()?.toISOString() || null
         });
       });
-      
-      console.log('✅ 進捗データ取得成功:', progressItems.length, '件');
+
       setDeals(progressItems);
     } catch (error) {
-      console.error('💥 進捗データ取得エラー:', error);
-      // エラー時はモックデータを使用
-      setDeals(mockDeals);
+      console.error('Failed to fetch progress data:', error);
     } finally {
       setIsLoading(false);
     }
+
+    // NA取得はテーブル表示をブロックせず後追いで更新
+    if (progressItems.length > 0) {
+      try {
+        const salesInfoEntries = await Promise.all(
+          progressItems.map(async (item) => {
+            const info = await fetchSalesInfo(item.id);
+            return [item.id, info];
+          })
+        );
+        setNaDataMap(Object.fromEntries(salesInfoEntries));
+      } catch (error) {
+        console.error('Failed to fetch NA data:', error);
+      }
+    }
   };
-  
-  const handleStatusChange = async (dealId, newStatus) => {
+
+  // ステータス変更
+  const handleStatusChange = async (e, dealId, newStatus) => {
+    e.stopPropagation();
     try {
-      console.log('🔄 ステータス更新開始:', dealId, newStatus);
-      
-      // 「フェーズ8」ステータスの場合は受注情報入力モーダルを表示
       if (newStatus === 'フェーズ8') {
         const targetDeal = deals.find(deal => deal.id === dealId);
         if (targetDeal) {
           setReceivedOrderModal({ show: true, deal: targetDeal });
-          return; // モーダル表示して処理を一時停止
+          return;
         }
       }
-      
-      // 通常のステータス更新処理
+
       const progressRef = doc(db, 'progressDashboard', dealId);
-      const updateData = {
-        status: newStatus,
-        updatedAt: serverTimestamp()
-      };
-      
-      // 「フェーズ8」ステータスに変更された時は確定日・継続管理ステータスを自動記録
+      const updateData = { status: newStatus, updatedAt: serverTimestamp() };
       if (newStatus === 'フェーズ8') {
         updateData.confirmedDate = new Date().toISOString().split('T')[0];
         updateData.continuationStatus = '施策実施中';
       }
-      
       await updateDoc(progressRef, updateData);
-      
-      console.log('✅ ステータス更新成功');
-      
-      // ローカル状態を更新
-      setDeals(prev => prev.map(deal => 
+      setDeals(prev => prev.map(deal =>
         deal.id === dealId ? { ...deal, status: newStatus } : deal
       ));
-      
-      // 成功時のフィードバック
-      const statusElement = document.querySelector(`[data-deal-id="${dealId}"] select`);
-      if (statusElement) {
-        statusElement.style.background = '#d4edda';
-        statusElement.style.borderColor = '#c3e6cb';
-        setTimeout(() => {
-          statusElement.style.background = '';
-          statusElement.style.borderColor = '';
-        }, 1000);
-      }
-      
     } catch (error) {
-      console.error('💥 ステータス更新エラー:', error);
-      alert('ステータス更新に失敗しました。もう一度お試しください。');
-      // エラー時は元の状態に戻す
+      console.error('Failed to update status:', error);
+      alert('ステータス更新に失敗しました');
       await fetchProgressData();
-    }
-  };
-  
-  // 受注情報保存処理
-  const handleSaveReceivedOrder = async (orderData) => {
-    try {
-      setIsSavingOrder(true);
-      console.log('💾 受注情報保存開始:', orderData);
-      
-      // salesService経由で受注情報を保存
-      await updateDealOrderInfo(
-        orderData.dealId,
-        orderData.receivedOrderMonth,
-        orderData.receivedOrderAmount
-      );
-      
-      console.log('✅ 受注情報保存成功');
-      
-      // データを再取得してUI更新
-      await fetchProgressData();
-      
-      // モーダルを閉じる
-      setReceivedOrderModal({ show: false, deal: null });
-      
-      // 成功メッセージ
-      alert('受注情報が保存されました');
-      
-    } catch (error) {
-      console.error('💥 受注情報保存エラー:', error);
-      alert('受注情報の保存に失敗しました: ' + error.message);
-    } finally {
-      setIsSavingOrder(false);
-    }
-  };
-  
-  // 受注モーダルのキャンセル処理
-  const handleCancelReceivedOrder = () => {
-    // ステータスセレクトの値を元に戻す（選択前の状態）
-    const deal = receivedOrderModal.deal;
-    if (deal) {
-      const statusElement = document.querySelector(`[data-deal-id="${deal.id}"] select`);
-      if (statusElement) {
-        statusElement.value = deal.status; // 元のステータスに戻す
-      }
-    }
-    setReceivedOrderModal({ show: false, deal: null });
-  };
-  
-  const fetchIntroducers = async () => {
-    try {
-      console.log('📋 紹介者データをFirestoreから取得開始');
-      
-      const introducersRef = collection(db, 'introducers');
-      const q = query(introducersRef, orderBy('createdAt', 'desc'));
-      const querySnapshot = await getDocs(q);
-      
-      const introducersData = [];
-      querySnapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        introducersData.push({
-          id: docSnap.id,
-          ...data
-        });
-      });
-      
-      console.log('✅ 紹介者データ取得成功:', introducersData.length, '件');
-      setIntroducersList(introducersData);
-    } catch (error) {
-      console.error('💥 紹介者データ取得エラー:', error);
-      // エラー時はモックデータを使用
-      setIntroducersList(introducers);
     }
   };
 
+
+  // 削除
   const handleDelete = async (deal) => {
     try {
-      console.log('🗑 案件削除開始:', deal.id);
-      
-      // 削除前に案件データをバックアップ
       const dealBackup = { ...deal };
-      
-      // Firestoreから案件を削除
       await deleteDoc(doc(db, 'progressDashboard', deal.id));
-      
-      console.log('✅ 案件削除成功');
-      
-      // Undo操作を記録
+
       recordAction({
         type: 'DELETE_DEAL',
         description: `案件「${deal.productName}」を削除`,
         undoFunction: async () => {
-          // 削除された案件を復元
           const docRef = doc(db, 'progressDashboard', dealBackup.id);
-          
-          // createdAt, updatedAtを適切に復元
-          const restoreData = {
-            ...dealBackup,
-            updatedAt: serverTimestamp()
-          };
-          
-          // Timestampフィールドを除去（setDocで自動生成される）
+          const restoreData = { ...dealBackup, updatedAt: serverTimestamp() };
           if (restoreData.id) delete restoreData.id;
-          
+          if (restoreData.createdAtRaw) delete restoreData.createdAtRaw;
           await setDoc(docRef, restoreData);
-          console.log('🔄 案件復元完了:', dealBackup.productName);
-          
-          // データを再取得して画面を更新
           await fetchProgressData();
         }
       });
-      
-      // 削除成功後、データを再取得
+
       await fetchProgressData();
       setDeleteModal({ show: false, deal: null });
-      // alert('案件が削除されました'); // 通知は不要（undo通知で代替）
     } catch (error) {
-      console.error('💥 削除エラー:', error);
+      console.error('Failed to delete:', error);
       alert('削除に失敗しました');
     }
   };
 
-  // 案件を複製
-  const handleDuplicate = async (deal) => {
-    try {
-      console.log('📋 案件複製開始:', deal.id);
-
-      // 複製データを作成（IDと一部フィールドを除外）
-      const duplicateData = {
-        companyName: deal.companyName || '',
-        productName: deal.productName || '',
-        proposalMenu: deal.proposalMenu || '',
-        expectedBudget: deal.expectedBudget || null,
-        representative: deal.representative || '',
-        partnerRepresentative: deal.partnerRepresentative || null,
-        leadSource: '', // 流入経路は空にする（別案件として識別するため）
-        introducer: '',
-        introducerId: 0,
-        status: 'フェーズ1', // ステータスはフェーズ1にリセット
-        lastContactDate: new Date().toISOString().split('T')[0],
-        nextAction: '',
-        nextActionDate: null,
-        summary: '',
-        sub_department_name: deal.sub_department_name || '',
-        sub_department_owner: deal.sub_department_owner || '',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      };
-
-      // Firestoreに新規案件として追加
-      const progressRef = collection(db, 'progressDashboard');
-      const newDocRef = await addDoc(progressRef, duplicateData);
-
-      console.log('✅ 案件複製成功:', newDocRef.id);
-
-      // データを再取得して画面を更新
-      await fetchProgressData();
-
-      alert(`「${deal.productName}」を複製しました。流入経路を設定してください。`);
-    } catch (error) {
-      console.error('💥 複製エラー:', error);
-      alert('複製に失敗しました');
-    }
-  };
-
-  // 期日のステータスをチェック
-  const getDateStatus = (dateString) => {
-    if (!dateString) return null;
-    const nextActionDate = new Date(dateString);
-    nextActionDate.setHours(0, 0, 0, 0);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    // 過去の日付（超過）
-    if (nextActionDate < today) {
-      return 'overdue';
-    }
-
-    // 2日以内（急）
-    const twoDaysFromToday = new Date(today.getTime() + 2 * 24 * 60 * 60 * 1000);
-    if (nextActionDate <= twoDaysFromToday) {
-      return 'urgent';
-    }
-
-    return null;
-  };
-
-  // 後方互換性のため残す
-  const isUrgent = (dateString) => {
-    const status = getDateStatus(dateString);
-    return status === 'urgent' || status === 'overdue';
-  };
-
-  // 紹介者名を取得（useCallbackで安定化）
-  const getIntroducerName = useCallback((deal) => {
-    if (!deal) return '';
-    
-    // 直接保存された紹介者名がある場合はそれを優先
-    if (deal.introducer && deal.introducer.trim() !== '') {
-      return deal.introducer;
-    }
-    
-    // introducerIdがある場合はIDから検索
-    if (deal.introducerId) {
-      const introducer = introducersList.find(i => i.id === deal.introducerId);
-      return introducer ? introducer.name : '';
-    }
-    
-    return '';
-  }, [introducersList]);
-
-  // ソート機能
+  // ソート
   const handleSort = (key) => {
-    let direction = 'asc';
-    if (sortConfig.key === key) {
-      if (sortConfig.direction === 'asc') {
-        direction = 'desc';
-      } else if (sortConfig.direction === 'desc') {
-        direction = 'none';
-      } else {
-        direction = 'asc';
-      }
+    if (sortKey === key) {
+      if (sortDir === 'asc') setSortDir('desc');
+      else { setSortKey(null); setSortDir('asc'); }
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
     }
-    setSortConfig({ key, direction });
   };
 
-  // フィルターチェックボックスのハンドラー
+  const renderSortIcon = (key) => {
+    if (sortKey !== key) return null;
+    return (
+      <SortIcon>
+        {sortDir === 'asc' ? <FiChevronUp size={12} /> : <FiChevronDown size={12} />}
+      </SortIcon>
+    );
+  };
+
+  // フィルター
   const handleFilterChange = (filterType, value, isChecked) => {
-    switch (filterType) {
-      case 'status':
-        if (isChecked) {
-          setStatusFilter(prev => [...prev, value]);
-        } else {
-          setStatusFilter(prev => prev.filter(item => item !== value));
-        }
-        break;
-      case 'representative':
-        if (isChecked) {
-          setRepresentativeFilter(prev => [...prev, value]);
-        } else {
-          setRepresentativeFilter(prev => prev.filter(item => item !== value));
-        }
-        break;
-      case 'introducer':
-        if (isChecked) {
-          setIntroducerFilter(prev => [...prev, value]);
-        } else {
-          setIntroducerFilter(prev => prev.filter(item => item !== value));
-        }
-        break;
+    const setterMap = {
+      status: setStatusFilter,
+      representative: setRepresentativeFilter,
+      introducer: setIntroducerFilter
+    };
+    const setter = setterMap[filterType];
+    if (setter) {
+      setter(prev => isChecked ? [...prev, value] : prev.filter(item => item !== value));
     }
   };
 
-  // 全選択/全解除のハンドラー
   const handleToggleAll = (filterType, items) => {
-    switch (filterType) {
-      case 'status':
-        setStatusFilter(prev => prev.length === items.length ? [] : items);
-        break;
-      case 'representative':
-        setRepresentativeFilter(prev => prev.length === items.length ? [] : items);
-        break;
-      case 'introducer':
-        setIntroducerFilter(prev => prev.length === items.length ? [] : items);
-        break;
+    const setterMap = {
+      status: setStatusFilter,
+      representative: setRepresentativeFilter,
+      introducer: setIntroducerFilter
+    };
+    const setter = setterMap[filterType];
+    if (setter) {
+      setter(prev => prev.length === items.length ? [] : items);
     }
   };
 
-  // ドロップダウンの開閉
   const toggleDropdown = (type) => {
-    setDropdownOpen(prev => ({
-      ...prev,
-      [type]: !prev[type]
-    }));
+    setDropdownOpen(prev => ({ ...prev, [type]: !prev[type] }));
   };
 
   // 外部クリックでドロップダウンを閉じる
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (!event.target.closest('.filter-dropdown')) {
-        setDropdownOpen({
-          status: false,
-          representative: false,
-          introducer: false
-        });
+        setDropdownOpen({ status: false, representative: false, introducer: false });
       }
     };
-
     document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // フィルタリング&ソートされたデータ
+  // 紹介者名を取得
+  const getIntroducerName = useCallback((deal) => {
+    return deal?.introducer?.trim() || '';
+  }, []);
+
+  // フィルタリング + ソート
   const filteredDeals = useMemo(() => {
     if (!Array.isArray(deals)) return [];
-    
-    try {
-      // フィルタリング
-      let filtered = deals.filter(deal => {
-        if (!deal) return false;
-        
-        const companyName = deal.companyName || deal.productName || '';
-        const proposalMenu = deal.proposalMenu || '';
-        const status = deal.status || '';
-        const representative = deal.representative || '';
 
-        const matchesSearch = !searchTerm ||
-                             companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                             proposalMenu.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesStatus = statusFilter.length === 0 || statusFilter.includes(status);
-        const matchesRepresentative = representativeFilter.length === 0 || representativeFilter.includes(representative);
-        
-        let matchesIntroducer = true;
-        if (introducerFilter.length > 0) {
-          const introducerName = getIntroducerName(deal);
-          matchesIntroducer = introducerFilter.includes(introducerName);
-        }
-        
-        // パートナー会社の場合は、その会社の案件のみ表示
-        const matchesPartnerCompany = !isPartnerView || !partnerCompany || 
-                                     (deal.introducer === partnerCompany);
-        
-        // 管理者画面の場合は「他社案件」を非表示
-        const isValidProposalMenu = isPartnerView || (proposalMenu !== '他社案件');
-        
-        return matchesSearch && matchesStatus && matchesRepresentative && matchesIntroducer && matchesPartnerCompany && isValidProposalMenu;
-      });
+    let filtered = deals.filter(deal => {
+      if (!deal) return false;
+      const companyName = deal.companyName || '';
+      const productName = deal.productName || '';
+      const status = deal.status || '';
+      const representative = deal.representative || '';
 
-      // ソート処理
-      if (sortConfig.key && sortConfig.direction !== 'none') {
-        filtered.sort((a, b) => {
-          let aValue, bValue;
-          
-          switch (sortConfig.key) {
-            case 'lastContactDate':
-              // 日付フィールドのソート
-              aValue = a.lastContactDate ? new Date(a.lastContactDate) : new Date(0);
-              bValue = b.lastContactDate ? new Date(b.lastContactDate) : new Date(0);
-              break;
-            case 'nextActionDate':
-              // フェーズ8（受注）案件は次回アクション日付でソートしない
-              if (a.status === 'フェーズ8' && b.status === 'フェーズ8') {
-                // 両方フェーズ8の場合は元の順序を維持
-                return 0;
-              } else if (a.status === 'フェーズ8') {
-                // aがフェーズ8の場合は最後に（昇順時）または最初に（降順時）
-                return sortConfig.direction === 'asc' ? 1 : -1;
-              } else if (b.status === 'フェーズ8') {
-                // bがフェーズ8の場合は最後に（昇順時）または最初に（降順時）
-                return sortConfig.direction === 'asc' ? -1 : 1;
-              } else {
-                // どちらもフェーズ8でない場合は通常の日付ソート
-                aValue = a.nextActionDate ? new Date(a.nextActionDate) : new Date(9999, 11, 31);
-                bValue = b.nextActionDate ? new Date(b.nextActionDate) : new Date(9999, 11, 31);
-              }
-              break;
-            case 'companyName':
-              aValue = (a.companyName || a.productName || '').toLowerCase();
-              bValue = (b.companyName || b.productName || '').toLowerCase();
-              break;
-            case 'proposalMenu':
-              aValue = (a.proposalMenu || '').toLowerCase();
-              bValue = (b.proposalMenu || '').toLowerCase();
-              break;
-            default:
-              return 0;
-          }
-          
-          if (aValue < bValue) {
-            return sortConfig.direction === 'asc' ? -1 : 1;
-          }
-          if (aValue > bValue) {
-            return sortConfig.direction === 'asc' ? 1 : -1;
-          }
-          return 0;
-        });
+      const matchesSearch = !searchTerm ||
+        companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        productName.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesStatus = statusFilter.length === 0 || statusFilter.includes(status);
+      const matchesRepresentative = representativeFilter.length === 0 || representativeFilter.includes(representative);
+
+      let matchesIntroducer = true;
+      if (introducerFilter.length > 0) {
+        matchesIntroducer = introducerFilter.includes(getIntroducerName(deal));
       }
 
-      return filtered;
-    } catch (error) {
-      console.error('フィルタリング・ソートエラー:', error);
-      return deals;
-    }
-  }, [deals, searchTerm, statusFilter, representativeFilter, introducerFilter, isPartnerView, partnerCompany, getIntroducerName, sortConfig]);
+      const matchesPartnerCompany = !isPartnerView ||
+        !(window.location.pathname.startsWith('/partner-entry/piala')) ||
+        (deal.introducer === '株式会社ピアラ');
 
-  const handleViewDetail = (id) => {
-    navigate(`/product/${id}`);
-  };
+      const isValidProposalMenu = isPartnerView || (deal.proposalMenu !== '他社案件');
 
-  const handleAddAction = (deal) => {
-    // 案件情報を事前入力してアクションログ記録ページに遷移
-    console.log('Deal data:', deal); // デバッグ用
-    
-    // 紹介者名から紹介者IDを取得
-    const getIntroducerIdByName = (introducerName) => {
-      const introducer = introducersList.find(i => i.name === introducerName) ||
-                        introducers.find(i => i.name === introducerName);
-      return introducer ? introducer.id.toString() : '4'; // デフォルト値は直接営業
-    };
-    
-    // introducerIdが存在する場合はそれを使用、なければ紹介者名から検索
-    let introducerId = '';
-    if (deal.introducerId) {
-      introducerId = deal.introducerId.toString();
-    } else if (deal.introducer) {
-      introducerId = getIntroducerIdByName(deal.introducer);
-    } else {
-      introducerId = '4'; // デフォルト値
-    }
-    
-    const params = new URLSearchParams({
-      companyName: deal.companyName || '',
-      productName: deal.productName || '',
-      proposalMenu: deal.proposalMenu || '',
-      representative: deal.representative || '',
-      leadSource: deal.leadSource || '',
-      introducerId: introducerId,
-      introducer: deal.introducer || ''
+      return matchesSearch && matchesStatus && matchesRepresentative && matchesIntroducer && matchesPartnerCompany && isValidProposalMenu;
     });
 
-    navigate(`/log-entry?${params.toString()}`);
+    // ソート
+    if (sortKey) {
+      filtered = [...filtered].sort((a, b) => {
+        let aVal, bVal;
+        switch (sortKey) {
+          case 'companyName':
+            aVal = (a.companyName || '').toLowerCase();
+            bVal = (b.companyName || '').toLowerCase();
+            break;
+          case 'elapsedDays':
+            aVal = calcElapsedDays(a.createdAtRaw) || 0;
+            bVal = calcElapsedDays(b.createdAtRaw) || 0;
+            return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+          case 'nextActionDate': {
+            const infoA = naDataMap[a.id] || {};
+            const infoB = naDataMap[b.id] || {};
+            const dateA = infoA.naEntry?.actionDueDate;
+            const dateB = infoB.naEntry?.actionDueDate;
+            aVal = dateA ? new Date(dateA) : new Date(9999, 11, 31);
+            bVal = dateB ? new Date(dateB) : new Date(9999, 11, 31);
+            return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+          }
+          default:
+            aVal = a[sortKey] || '';
+            bVal = b[sortKey] || '';
+        }
+        if (typeof aVal === 'string' && typeof bVal === 'string') {
+          const cmp = aVal.localeCompare(bVal, 'ja');
+          return sortDir === 'asc' ? cmp : -cmp;
+        }
+        return 0;
+      });
+    }
+
+    return filtered;
+  }, [deals, searchTerm, statusFilter, representativeFilter, introducerFilter, isPartnerView, getIntroducerName, sortKey, sortDir, naDataMap]);
+
+  // 期日バッジ
+  const renderDueDateBadge = (dueDate) => {
+    const status = getDateStatus(dueDate);
+    if (status === 'overdue') return <DueDateBadge $type="overdue">超過</DueDateBadge>;
+    if (status === 'urgent') return <DueDateBadge $type="urgent">急</DueDateBadge>;
+    return null;
   };
 
-  const handleEdit = (deal) => {
-    setEditModal({ show: true, deal: { ...deal } });
+  // 新規追加
+  const handleAddDeal = async () => {
+    if (!addForm.companyName.trim() || !addForm.productName.trim()) return;
+    try {
+      setIsSaving(true);
+      const newDeal = {
+        companyName: addForm.companyName.trim(),
+        introducer: addForm.introducer.trim(),
+        productName: addForm.productName.trim(),
+        leadSource: addForm.leadSource,
+        representative: addForm.representative,
+        status: addForm.status || 'フェーズ1',
+        expectedBudget: addForm.expectedBudget ? Number(addForm.expectedBudget) : null,
+        rank: addForm.rank || '',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+      if (addForm.leadSource === 'パートナー') {
+        newDeal.introducerId = addForm.introducerId ? parseInt(addForm.introducerId) : 0;
+        newDeal.partnerRepresentative = addForm.partnerRepresentative || null;
+      }
+      await addDoc(collection(db, 'progressDashboard'), newDeal);
+      setShowAddModal(false);
+      setAddForm({
+        companyName: '', introducer: '', productName: '',
+        leadSource: '', representative: '', status: 'フェーズ1',
+        expectedBudget: '', rank: '', introducerId: '', partnerRepresentative: ''
+      });
+      await fetchProgressData();
+    } catch (error) {
+      console.error('Failed to add deal:', error);
+      alert('案件の追加に失敗しました');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
+  // CSV取込
+  const handleCsvImport = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = '';
+
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).filter(line => line.trim());
+
+    // ヘッダー行をスキップ
+    const startIdx = lines[0].includes('会社名') ? 1 : 0;
+    const rows = lines.slice(startIdx).map(line => {
+      const cols = line.split(',').map(c => c.trim());
+      return {
+        companyName: cols[0] || '',
+        introducer: cols[1] || '',
+        productName: cols[2] || '',
+        leadSource: cols[3] || '',
+        representative: cols[4] || '',
+        status: cols[5] || 'フェーズ1',
+        expectedBudget: cols[6] ? Number(cols[6]) : null,
+        rank: cols[7] || ''
+      };
+    }).filter(r => r.companyName && r.productName);
+
+    if (rows.length === 0) {
+      alert('取り込めるデータがありません。\nCSVフォーマット: 会社名,代理店名,商材名,流入経路,担当者,ステータス,想定予算,運用ランク');
+      return;
+    }
+
+    if (!window.confirm(`${rows.length}件の案件を一括追加しますか？`)) return;
+
+    try {
+      for (const row of rows) {
+        await addDoc(collection(db, 'progressDashboard'), {
+          companyName: row.companyName,
+          introducer: row.introducer === '-' ? '' : row.introducer,
+          productName: row.productName,
+          leadSource: row.leadSource,
+          representative: row.representative,
+          status: row.status || 'フェーズ1',
+          expectedBudget: row.expectedBudget,
+          rank: row.rank,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+      }
+      alert(`${rows.length}件を追加しました`);
+      await fetchProgressData();
+    } catch (error) {
+      console.error('CSV import failed:', error);
+      alert('CSV取り込みに失敗しました');
+    }
+  };
+
+  // 編集保存
   const handleEditSave = async () => {
     try {
       const updatedDeal = editModal.deal;
-      console.log('✏️ 案件編集保存開始:', updatedDeal.id);
-      
       const dealRef = doc(db, 'progressDashboard', updatedDeal.id);
-      // 流入経路と紹介者情報の処理
-      const leadSourceInfo = {
-        leadSource: updatedDeal.leadSource || ''
-      };
+      const leadSourceInfo = { leadSource: updatedDeal.leadSource || '' };
 
       // パートナー選択時のみ紹介者情報を更新
       if (updatedDeal.leadSource === 'パートナー') {
@@ -1005,8 +891,7 @@ function ProgressDashboard() {
         }
         leadSourceInfo.partnerRepresentative = updatedDeal.partnerRepresentative || null;
       } else {
-        // パートナー以外の場合は紹介者情報をクリア
-        leadSourceInfo.introducer = '';
+        leadSourceInfo.introducer = updatedDeal.introducer || '';
         leadSourceInfo.introducerId = 0;
         leadSourceInfo.partnerRepresentative = null;
       }
@@ -1014,65 +899,129 @@ function ProgressDashboard() {
       await updateDoc(dealRef, {
         companyName: updatedDeal.companyName || '',
         productName: updatedDeal.productName || '',
-        proposalMenu: updatedDeal.proposalMenu,
-        representative: updatedDeal.representative,
+        proposalMenu: updatedDeal.proposalMenu || '',
+        representative: updatedDeal.representative || '',
         expectedBudget: updatedDeal.expectedBudget || null,
+        rank: updatedDeal.rank || '',
         ...leadSourceInfo,
         updatedAt: serverTimestamp()
       });
-      
-      console.log('✅ 案件編集保存成功');
-      
-      // データを再取得
       await fetchProgressData();
       setEditModal({ show: false, deal: null });
-      alert('案件情報が更新されました');
     } catch (error) {
-      console.error('💥 編集保存エラー:', error);
+      console.error('Failed to save edit:', error);
       alert('保存に失敗しました');
     }
   };
 
-  return (
-    <DashboardContainer>
-      <Header>
-        <Title>案件一覧</Title>
-      </Header>
+  // フェーズ8送信時 → 既存案件移行確認モーダル表示
+  // フェーズ8送信時 → 受注情報入力モーダルを表示
+  const handlePhase8Submitted = () => {
+    setReceivedOrderModal({ show: true, deal: selectedDeal });
+  };
 
+  // 受注情報保存 → 既存案件へ移行
+  const handleSaveReceivedOrder = async (orderData) => {
+    if (!selectedDeal) return;
+    try {
+      setIsSavingOrder(true);
+
+      // 受注情報をドキュメントに保存
+      const dealRef = doc(db, 'progressDashboard', selectedDeal.id);
+      await updateDoc(dealRef, {
+        status: 'フェーズ8',
+        isExistingProject: true,
+        confirmedDate: new Date().toISOString().split('T')[0],
+        receivedOrderMonth: orderData.receivedOrderMonth,
+        receivedOrderAmount: orderData.receivedOrderAmount,
+        updatedAt: serverTimestamp()
+      });
+
+      // 営業レコードを作成（既存案件側のsalesRecordsにも追加）
+      await addSalesRecord(selectedDeal.id, {
+        phase: 'フェーズ8',
+        budget: orderData.receivedOrderAmount,
+        date: new Date().toISOString().split('T')[0],
+        salesRep: orderData.salesRep || '',
+        operatorRep: orderData.operatorRep || '',
+        startDate: orderData.startDate || '',
+        endDate: orderData.endDate || '',
+        createdAt: new Date()
+      });
+
+      setReceivedOrderModal({ show: false, deal: null });
+      setSelectedDeal(null);
+      await fetchProgressData();
+      alert('受注情報が保存され、既存案件に移行しました');
+    } catch (error) {
+      console.error('Failed to save received order:', error);
+      alert('保存に失敗しました: ' + error.message);
+    } finally {
+      setIsSavingOrder(false);
+    }
+  };
+
+  const handleCancelReceivedOrder = () => {
+    setReceivedOrderModal({ show: false, deal: null });
+  };
+
+  // パネルクローズ時にデータを再取得
+  const handlePanelClose = () => {
+    setSelectedDeal(null);
+    fetchProgressData();
+  };
+
+  // パネル側でプロジェクト更新
+  const handleProjectUpdate = useCallback((updatedProject) => {
+    setDeals(prev => prev.map(d => d.id === updatedProject.id ? { ...d, ...updatedProject } : d));
+    setSelectedDeal(prev => prev && prev.id === updatedProject.id ? { ...prev, ...updatedProject } : prev);
+  }, []);
+
+  // 紹介者ユニーク一覧
+  const uniqueIntroducers = useMemo(() => {
+    return [...new Set(deals.map(deal => getIntroducerName(deal)).filter(name => name))].sort();
+  }, [deals, getIntroducerName]);
+
+  return (
+    <PageContainer>
+      <PageHeader>
+        <Title>新規案件一覧</Title>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <AddButton onClick={() => setShowCsvGuide(true)}>
+            <FiUpload size={14} />CSV取込
+          </AddButton>
+          <AddButton onClick={() => setShowAddModal(true)}>
+            <FiPlus size={14} />新規追加
+          </AddButton>
+        </div>
+      </PageHeader>
+
+      {/* フィルターセクション */}
       <FilterSection>
         <FilterGrid>
           <div>
-            <label>🔍 検索</label>
+            <FormLabel>検索</FormLabel>
             <SearchInput
               type="text"
-              placeholder="会社名・提案メニューで検索..."
+              placeholder="会社名・商材名で検索..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
           <div>
-            <label>📊 ステータス</label>
+            <FormLabel>ステータス</FormLabel>
             <FilterDropdownContainer className="filter-dropdown">
-              <FilterDropdownButton
-                type="button"
-                onClick={() => toggleDropdown('status')}
-              >
+              <FilterDropdownButton type="button" onClick={() => toggleDropdown('status')}>
                 <span>
-                  {statusFilter.length === 0 
-                    ? '選択してください' 
-                    : statusFilter.length === STATUSES.length 
-                    ? '全て選択中' 
-                    : `${statusFilter.length}件選択中`
-                  }
+                  {statusFilter.length === 0 ? '選択してください'
+                    : statusFilter.length === STATUSES.length ? '全て選択中'
+                    : `${statusFilter.length}件選択中`}
                 </span>
                 <FiChevronDown />
               </FilterDropdownButton>
               {dropdownOpen.status && (
                 <FilterDropdownList>
-                  <FilterToggleAllButton
-                    type="button"
-                    onClick={() => handleToggleAll('status', STATUSES)}
-                  >
+                  <FilterToggleAllButton type="button" onClick={() => handleToggleAll('status', STATUSES)}>
                     {statusFilter.length === STATUSES.length ? '全て解除' : '全て選択'}
                   </FilterToggleAllButton>
                   <FilterCheckboxContainer>
@@ -1092,28 +1041,19 @@ function ProgressDashboard() {
             </FilterDropdownContainer>
           </div>
           <div>
-            <label>👤 担当者</label>
+            <FormLabel>担当者</FormLabel>
             <FilterDropdownContainer className="filter-dropdown">
-              <FilterDropdownButton
-                type="button"
-                onClick={() => toggleDropdown('representative')}
-              >
+              <FilterDropdownButton type="button" onClick={() => toggleDropdown('representative')}>
                 <span>
-                  {representativeFilter.length === 0 
-                    ? '選択してください' 
-                    : representativeFilter.length === SALES_REPRESENTATIVES.length 
-                    ? '全て選択中' 
-                    : `${representativeFilter.length}件選択中`
-                  }
+                  {representativeFilter.length === 0 ? '選択してください'
+                    : representativeFilter.length === SALES_REPRESENTATIVES.length ? '全て選択中'
+                    : `${representativeFilter.length}件選択中`}
                 </span>
                 <FiChevronDown />
               </FilterDropdownButton>
               {dropdownOpen.representative && (
                 <FilterDropdownList>
-                  <FilterToggleAllButton
-                    type="button"
-                    onClick={() => handleToggleAll('representative', SALES_REPRESENTATIVES)}
-                  >
+                  <FilterToggleAllButton type="button" onClick={() => handleToggleAll('representative', SALES_REPRESENTATIVES)}>
                     {representativeFilter.length === SALES_REPRESENTATIVES.length ? '全て解除' : '全て選択'}
                   </FilterToggleAllButton>
                   <FilterCheckboxContainer>
@@ -1133,47 +1073,32 @@ function ProgressDashboard() {
             </FilterDropdownContainer>
           </div>
           <div>
-            <label>🏢 紹介者</label>
+            <FormLabel>代理店</FormLabel>
             <FilterDropdownContainer className="filter-dropdown">
-              <FilterDropdownButton
-                type="button"
-                onClick={() => toggleDropdown('introducer')}
-              >
+              <FilterDropdownButton type="button" onClick={() => toggleDropdown('introducer')}>
                 <span>
-                  {introducerFilter.length === 0 
-                    ? '全て選択' 
-                    : `${introducerFilter.length}件選択中`
-                  }
+                  {introducerFilter.length === 0 ? '全て選択'
+                    : `${introducerFilter.length}件選択中`}
                 </span>
                 <FiChevronDown />
               </FilterDropdownButton>
               {dropdownOpen.introducer && (
                 <FilterDropdownList>
-                  {(() => {
-                    const uniqueIntroducers = [...new Set(deals.map(deal => getIntroducerName(deal)).filter(name => name && name.trim() !== ''))].sort();
-                    return (
-                      <>
-                        <FilterToggleAllButton
-                          type="button"
-                          onClick={() => handleToggleAll('introducer', uniqueIntroducers)}
-                        >
-                          {introducerFilter.length === uniqueIntroducers.length ? '全て解除' : '全て選択'}
-                        </FilterToggleAllButton>
-                        <FilterCheckboxContainer>
-                          {uniqueIntroducers.map(introducerName => (
-                            <FilterCheckboxItem key={introducerName}>
-                              <input
-                                type="checkbox"
-                                checked={introducerFilter.includes(introducerName)}
-                                onChange={(e) => handleFilterChange('introducer', introducerName, e.target.checked)}
-                              />
-                              <span>{introducerName}</span>
-                            </FilterCheckboxItem>
-                          ))}
-                        </FilterCheckboxContainer>
-                      </>
-                    );
-                  })()}
+                  <FilterToggleAllButton type="button" onClick={() => handleToggleAll('introducer', uniqueIntroducers)}>
+                    {introducerFilter.length === uniqueIntroducers.length ? '全て解除' : '全て選択'}
+                  </FilterToggleAllButton>
+                  <FilterCheckboxContainer>
+                    {uniqueIntroducers.map(name => (
+                      <FilterCheckboxItem key={name}>
+                        <input
+                          type="checkbox"
+                          checked={introducerFilter.includes(name)}
+                          onChange={(e) => handleFilterChange('introducer', name, e.target.checked)}
+                        />
+                        <span>{name}</span>
+                      </FilterCheckboxItem>
+                    ))}
+                  </FilterCheckboxContainer>
                 </FilterDropdownList>
               )}
             </FilterDropdownContainer>
@@ -1181,443 +1106,450 @@ function ProgressDashboard() {
         </FilterGrid>
       </FilterSection>
 
-      {isLoading ? (
-        <div style={{ textAlign: 'center', padding: '2rem', color: '#7f8c8d' }}>
-          データを読み込み中...
-        </div>
-      ) : (
+      {/* テーブル */}
       <TableContainer>
-        <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHeaderCell
-              sortable
-              onClick={() => handleSort('companyName')}
-              style={{ width: '120px' }}
-            >
-              会社名
-              <span className="sort-indicator">
-                {sortConfig.key === 'companyName' && sortConfig.direction === 'asc' && <FiChevronUp />}
-                {sortConfig.key === 'companyName' && sortConfig.direction === 'desc' && <FiChevronDown />}
-                {sortConfig.key === 'companyName' && sortConfig.direction === 'none' && <FiMinus />}
-                {sortConfig.key !== 'companyName' && <FiMinus />}
-              </span>
-            </TableHeaderCell>
-            <TableHeaderCell style={{ width: '120px' }}>商材名</TableHeaderCell>
-            <TableHeaderCell
-              sortable
-              onClick={() => handleSort('proposalMenu')}
-              style={{ width: '120px' }}
-            >
-              提案メニュー
-              <span className="sort-indicator">
-                {sortConfig.key === 'proposalMenu' && sortConfig.direction === 'asc' && <FiChevronUp />}
-                {sortConfig.key === 'proposalMenu' && sortConfig.direction === 'desc' && <FiChevronDown />}
-                {sortConfig.key === 'proposalMenu' && sortConfig.direction === 'none' && <FiMinus />}
-                {sortConfig.key !== 'proposalMenu' && <FiMinus />}
-              </span>
-            </TableHeaderCell>
-            <TableHeaderCell style={{ minWidth: '100px' }}>想定予算</TableHeaderCell>
-            <TableHeaderCell style={{ minWidth: '100px' }}>流入経路</TableHeaderCell>
-            <TableHeaderCell style={{ minWidth: '140px' }}>担当者（社内／パートナー）</TableHeaderCell>
-            <TableHeaderCell style={{ minWidth: '80px' }}>ステータス</TableHeaderCell>
-            <TableHeaderCell 
-              sortable 
-              onClick={() => handleSort('lastContactDate')}
-              style={{ minWidth: '80px' }}
-            >
-              最終接触日
-              <span className="sort-indicator">
-                {sortConfig.key === 'lastContactDate' && sortConfig.direction === 'asc' && <FiChevronUp />}
-                {sortConfig.key === 'lastContactDate' && sortConfig.direction === 'desc' && <FiChevronDown />}
-                {sortConfig.key === 'lastContactDate' && sortConfig.direction === 'none' && <FiMinus />}
-                {sortConfig.key !== 'lastContactDate' && <FiMinus />}
-              </span>
-            </TableHeaderCell>
-            <TableHeaderCell 
-              sortable 
-              onClick={() => handleSort('nextActionDate')}
-              style={{ minWidth: '150px' }}
-            >
-              次回アクション
-              <span className="sort-indicator">
-                {sortConfig.key === 'nextActionDate' && sortConfig.direction === 'asc' && <FiChevronUp />}
-                {sortConfig.key === 'nextActionDate' && sortConfig.direction === 'desc' && <FiChevronDown />}
-                {sortConfig.key === 'nextActionDate' && sortConfig.direction === 'none' && <FiMinus />}
-                {sortConfig.key !== 'nextActionDate' && <FiMinus />}
-              </span>
-            </TableHeaderCell>
-            <TableHeaderCell style={{ minWidth: '50px' }}>ログ</TableHeaderCell>
-            <TableHeaderCell style={{ minWidth: '140px' }}>アクション</TableHeaderCell>
-          </TableRow>
-        </TableHeader>
-        <tbody>
-          {filteredDeals.map(deal => (
-            <TableRow key={deal.id}>
-              <TableCell style={{ minWidth: '160px' }}>
-                <strong>{deal.companyName || '-'}</strong>
-              </TableCell>
-              <TableCell style={{ minWidth: '160px' }}>
-                {deal.productName || '-'}
-              </TableCell>
-              <TableCell style={{ minWidth: '160px' }}>
-                {deal.proposalMenu}
-              </TableCell>
-              <TableCell style={{ minWidth: '100px' }}>
-                {deal.expectedBudget ? `¥${deal.expectedBudget.toLocaleString()}` : '-'}
-              </TableCell>
-              <TableCell style={{ minWidth: '100px' }}>
-                {deal.leadSource || '-'}
-              </TableCell>
-              <TableCell style={{ minWidth: '200px' }}>
-                {/* Ver 2.2: 担当者の併記表示（社内／パートナー） */}
-                {deal.representative && deal.partnerRepresentative ? (
-                  // 両方存在する場合は併記
-                  `${deal.representative}（社内）／${deal.partnerRepresentative}（${deal.introducer?.replace('株式会社', '') || 'パートナー'}）`
-                ) : deal.representative ? (
-                  // 社内担当者のみ
-                  `${deal.representative}（社内）`
-                ) : deal.partnerRepresentative ? (
-                  // パートナー担当者のみ
-                  `${deal.partnerRepresentative}（${deal.introducer?.replace('株式会社', '') || 'パートナー'}）`
-                ) : (
-                  // どちらもない場合
-                  '-'
-                )}
-              </TableCell>
-              <TableCell data-deal-id={deal.id} style={{ minWidth: '120px', padding: '0.5rem' }}>
-                <select
-                  value={deal.status}
-                  onChange={(e) => handleStatusChange(deal.id, e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '4px 8px',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px',
-                    fontSize: '0.875rem',
-                    backgroundColor: STATUS_COLORS[deal.status] || '#f8f9fa',
-                    color: ['失注'].includes(deal.status) ? '#fff' : '#000',
-                    fontWeight: 'bold',
-                    cursor: 'pointer',
-                    boxSizing: 'border-box'
-                  }}
-                >
-                  {STATUSES.map(status => (
-                    <option key={status} value={status}>
-                      {status}
-                    </option>
-                  ))}
-                </select>
-              </TableCell>
-              <TableCell style={{ minWidth: '100px' }}>{deal.lastContactDate}</TableCell>
-              <TableCell style={{ minWidth: '250px' }}>
-                {deal.status === 'フェーズ8' ? (
-                  <span style={{ color: '#999' }}>-</span>
-                ) : (
-                  <>
-                    {deal.nextAction}
-                    {deal.nextActionDate && getDateStatus(deal.nextActionDate) === 'overdue' && (
-                      <OverdueBadge>超過</OverdueBadge>
-                    )}
-                    {deal.nextActionDate && getDateStatus(deal.nextActionDate) === 'urgent' && (
-                      <UrgentBadge>急</UrgentBadge>
-                    )}
-                    {deal.nextActionDate && (
-                      <div style={{ fontSize: '0.875rem', color: '#666', marginTop: '0.25rem' }}>
-                        {deal.nextActionDate}
+        {isLoading ? (
+          <LoadingText>読み込み中...</LoadingText>
+        ) : filteredDeals.length === 0 ? (
+          <EmptyText>該当する案件がありません</EmptyText>
+        ) : (
+          <Table>
+            <TableHead>
+              <tr>
+                <TableHeaderCell $sortable onClick={() => handleSort('companyName')}>
+                  会社名{renderSortIcon('companyName')}
+                </TableHeaderCell>
+                <TableHeaderCell>代理店名</TableHeaderCell>
+                <TableHeaderCell>商材名</TableHeaderCell>
+                <TableHeaderCell>運用ランク</TableHeaderCell>
+                <TableHeaderCell>提案予算</TableHeaderCell>
+                <TableHeaderCell>流入経路</TableHeaderCell>
+                <TableHeaderCell>担当者</TableHeaderCell>
+                <TableHeaderCell>ステータス</TableHeaderCell>
+                <TableHeaderCell $sortable onClick={() => handleSort('elapsedDays')}>
+                  経過日数{renderSortIcon('elapsedDays')}
+                </TableHeaderCell>
+                <TableHeaderCell>ネクストアクション</TableHeaderCell>
+                <TableHeaderCell $sortable onClick={() => handleSort('nextActionDate')}>
+                  期日{renderSortIcon('nextActionDate')}
+                </TableHeaderCell>
+                <TableHeaderCell style={{ width: '40px' }}></TableHeaderCell>
+              </tr>
+            </TableHead>
+            <tbody>
+              {filteredDeals.map(deal => {
+                const elapsedDays = calcElapsedDays(deal.createdAtRaw);
+                // 営業記録からNA・フェーズを取得（フォールバック: deal直下のフィールド）
+                const salesInfo = naDataMap[deal.id] || {};
+                const naEntry = salesInfo.naEntry;
+                const displayPhase = salesInfo.latestPhase || deal.status || '';
+                const latestNaContent = naEntry?.actionContent || '';
+                const latestNaDueDate = naEntry?.actionDueDate || '';
+                return (
+                  <TableRow
+                    key={deal.id}
+                    onClick={() => setSelectedDeal(deal)}
+                  >
+                    <TableCell style={{ fontWeight: 500 }}>{deal.companyName || '-'}</TableCell>
+                    <TableCell>{deal.introducer || '-'}</TableCell>
+                    <TableCell>{deal.productName || '-'}</TableCell>
+                    <TableCell>{deal.rank || '-'}</TableCell>
+                    <TableCell>{deal.expectedBudget ? `¥${deal.expectedBudget.toLocaleString()}` : '-'}</TableCell>
+                    <TableCell>{deal.leadSource || '-'}</TableCell>
+                    <TableCell>{deal.representative || '-'}</TableCell>
+                    <TableCell>
+                      {displayPhase ? (
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '0.2rem 0.6rem',
+                          borderRadius: '12px',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          color: 'white',
+                          background: STATUS_COLORS[displayPhase] || '#95a5a6'
+                        }}>
+                          {displayPhase}
+                        </span>
+                      ) : '-'}
+                    </TableCell>
+                    <TableCell>
+                      {elapsedDays != null ? (
+                        <span style={{ color: elapsedDays > ELAPSED_DAYS_THRESHOLD ? '#e74c3c' : '#2c3e50', fontWeight: elapsedDays > ELAPSED_DAYS_THRESHOLD ? 600 : 400 }}>
+                          {elapsedDays}日
+                        </span>
+                      ) : '-'}
+                    </TableCell>
+                    <TableCell>
+                      {displayPhase === 'フェーズ8' ? (
+                        <span style={{ color: '#999' }}>-</span>
+                      ) : latestNaContent ? (
+                        <NaText>
+                          {latestNaContent.length > NA_TRUNCATE_LENGTH
+                            ? latestNaContent.slice(0, NA_TRUNCATE_LENGTH) + '...'
+                            : latestNaContent
+                          }
+                          {latestNaContent.length > NA_TRUNCATE_LENGTH && (
+                            <MoreLink onClick={(e) => { e.stopPropagation(); setNaModalText(latestNaContent); }}>
+                              続きを見る
+                            </MoreLink>
+                          )}
+                        </NaText>
+                      ) : '-'}
+                    </TableCell>
+                    <TableCell>
+                      {displayPhase === 'フェーズ8' ? '-' : (
+                        <>
+                          {latestNaDueDate || '-'}
+                          {renderDueDateBadge(latestNaDueDate)}
+                        </>
+                      )}
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <FiEdit3
+                          size={14}
+                          style={{ color: '#f39c12', cursor: 'pointer' }}
+                          onClick={() => setEditModal({ show: true, deal: { ...deal } })}
+                          title="編集"
+                        />
+                        <FiTrash2
+                          size={14}
+                          style={{ color: '#e74c3c', cursor: 'pointer' }}
+                          onClick={() => setDeleteModal({ show: true, deal })}
+                          title="削除"
+                        />
                       </div>
-                    )}
-                  </>
-                )}
-              </TableCell>
-              <TableCell>
-                <ActionButton 
-                  className="view"
-                  onClick={() => handleViewDetail(deal.id)}
-                >
-                  <FiEye />
-                  詳細
-                </ActionButton>
-              </TableCell>
-              <TableCell>
-                <ActionsCell>
-                  <ActionButton 
-                    className="edit"
-                    onClick={() => handleEdit(deal)}
-                  >
-                    <FiEdit3 />
-                    編集
-                  </ActionButton>
-                  <ActionButton
-                    className="add"
-                    onClick={() => handleAddAction(deal)}
-                  >
-                    <FiPlus />
-                    追加
-                  </ActionButton>
-                  <ActionButton
-                    className="copy"
-                    onClick={() => handleDuplicate(deal)}
-                    title="案件を複製"
-                  >
-                    <FiCopy />
-                    複製
-                  </ActionButton>
-                  <DeleteButton
-                    onClick={() => setDeleteModal({ show: true, deal })}
-                  >
-                    <FiTrash2 />
-                    削除
-                  </DeleteButton>
-                </ActionsCell>
-              </TableCell>
-            </TableRow>
-          ))}
-        </tbody>
-      </Table>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </tbody>
+          </Table>
+        )}
       </TableContainer>
+
+      {/* NAモーダル */}
+      {naModalText && (
+        <NaModal onClick={() => setNaModalText(null)}>
+          <NaModalContent onClick={(e) => e.stopPropagation()}>
+            <NaModalTitle>ネクストアクション</NaModalTitle>
+            <NaModalText>{naModalText}</NaModalText>
+            <NaModalClose onClick={() => setNaModalText(null)}>閉じる</NaModalClose>
+          </NaModalContent>
+        </NaModal>
       )}
 
-      {!isLoading && filteredDeals.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '2rem', color: '#7f8c8d' }}>
-          条件に合致する案件が見つかりませんでした。
-        </div>
-      )}
-      
+      {/* 削除確認モーダル */}
       {deleteModal.show && (
-        <Modal onClick={() => setDeleteModal({ show: false, deal: null })}>
-          <ModalContent onClick={(e) => e.stopPropagation()}>
+        <ModalOverlay onClick={() => setDeleteModal({ show: false, deal: null })}>
+          <ModalBox onClick={(e) => e.stopPropagation()}>
             <ModalTitle>案件削除の確認</ModalTitle>
-            <ModalText>
-              本当に「{deleteModal.deal?.productName}（{deleteModal.deal?.proposalMenu}）」を削除しますか？
-              <br />
-              この操作は元に戻せません。
-            </ModalText>
-            <ModalButtons>
-              <ModalButton
-                className="cancel"
-                onClick={() => setDeleteModal({ show: false, deal: null })}
-              >
+            <p style={{ margin: '0 0 1.5rem', color: '#555', fontSize: '0.9rem' }}>
+              本当に「{deleteModal.deal?.companyName}（{deleteModal.deal?.productName}）」を削除しますか？
+            </p>
+            <ModalActions>
+              <ModalBtn onClick={() => setDeleteModal({ show: false, deal: null })}>
                 キャンセル
-              </ModalButton>
-              <ModalButton
-                className="delete"
+              </ModalBtn>
+              <ModalBtn
+                $primary
                 onClick={() => handleDelete(deleteModal.deal)}
+                style={{ background: '#e74c3c' }}
               >
                 削除する
-              </ModalButton>
-            </ModalButtons>
-          </ModalContent>
-        </Modal>
+              </ModalBtn>
+            </ModalActions>
+          </ModalBox>
+        </ModalOverlay>
       )}
-      
+
       {/* 編集モーダル */}
       {editModal.show && (
-        <Modal onClick={() => setEditModal({ show: false, deal: null })}>
-          <ModalContent onClick={(e) => e.stopPropagation()}>
+        <ModalOverlay onClick={() => setEditModal({ show: false, deal: null })}>
+          <ModalBox onClick={(e) => e.stopPropagation()} style={{ maxHeight: '80vh', overflowY: 'auto' }}>
             <ModalTitle>案件情報編集</ModalTitle>
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>会社名</label>
-              <input
+            <FormGroup>
+              <FormLabel>会社名</FormLabel>
+              <FormInput
                 type="text"
                 value={editModal.deal?.companyName || ''}
-                onChange={(e) => setEditModal(prev => ({
-                  ...prev,
-                  deal: { ...prev.deal, companyName: e.target.value }
-                }))}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: '1px solid #ddd',
-                  borderRadius: '4px',
-                  fontSize: '1rem'
-                }}
+                onChange={e => setEditModal(prev => ({ ...prev, deal: { ...prev.deal, companyName: e.target.value } }))}
               />
-            </div>
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>商材名</label>
-              <input
+            </FormGroup>
+            <FormGroup>
+              <FormLabel>商材名</FormLabel>
+              <FormInput
                 type="text"
                 value={editModal.deal?.productName || ''}
-                onChange={(e) => setEditModal(prev => ({
-                  ...prev,
-                  deal: { ...prev.deal, productName: e.target.value }
-                }))}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: '1px solid #ddd',
-                  borderRadius: '4px',
-                  fontSize: '1rem'
-                }}
+                onChange={e => setEditModal(prev => ({ ...prev, deal: { ...prev.deal, productName: e.target.value } }))}
               />
-            </div>
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>提案メニュー</label>
-              <select
+            </FormGroup>
+            <FormGroup>
+              <FormLabel>提案メニュー</FormLabel>
+              <FormSelect
                 value={editModal.deal?.proposalMenu || ''}
-                onChange={(e) => setEditModal(prev => ({
-                  ...prev,
-                  deal: { ...prev.deal, proposalMenu: e.target.value }
-                }))}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: '1px solid #ddd',
-                  borderRadius: '4px',
-                  fontSize: '1rem',
-                  backgroundColor: 'white'
-                }}
+                onChange={e => setEditModal(prev => ({ ...prev, deal: { ...prev.deal, proposalMenu: e.target.value } }))}
               >
                 <option value="">選択してください</option>
-                {proposalMenusList.length > 0 ? (
-                  proposalMenusList.map(menu => (
-                    <option key={menu.id} value={menu.name}>{menu.name}</option>
-                  ))
-                ) : (
-                  <>
-                    <option value="第一想起取れるくん">第一想起取れるくん</option>
-                    <option value="獲得取れるくん">獲得取れるくん</option>
-                    <option value="インハウスキャンプ">インハウスキャンプ</option>
-                    <option value="IFキャスティング">IFキャスティング</option>
-                    <option value="運用コックピット">運用コックピット</option>
-                  </>
-                )}
-              </select>
-            </div>
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>社内担当者</label>
-              <select
+                {proposalMenusList.map(menu => (
+                  <option key={menu.id} value={menu.name}>{menu.name}</option>
+                ))}
+              </FormSelect>
+            </FormGroup>
+            <FormGroup>
+              <FormLabel>社内担当者</FormLabel>
+              <FormSelect
                 value={editModal.deal?.representative || ''}
-                onChange={(e) => setEditModal(prev => ({
-                  ...prev,
-                  deal: { ...prev.deal, representative: e.target.value }
-                }))}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: '1px solid #ddd',
-                  borderRadius: '4px',
-                  fontSize: '1rem',
-                  backgroundColor: 'white'
-                }}
+                onChange={e => setEditModal(prev => ({ ...prev, deal: { ...prev.deal, representative: e.target.value } }))}
               >
                 <option value="">選択してください</option>
                 {SALES_REPRESENTATIVES.map(rep => (
                   <option key={rep} value={rep}>{rep}</option>
                 ))}
-              </select>
-            </div>
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>流入経路</label>
-              <select
+              </FormSelect>
+            </FormGroup>
+            <FormGroup>
+              <FormLabel>流入経路</FormLabel>
+              <FormSelect
                 value={editModal.deal?.leadSource || ''}
-                onChange={(e) => setEditModal(prev => ({
-                  ...prev,
-                  deal: { ...prev.deal, leadSource: e.target.value }
-                }))}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: '1px solid #ddd',
-                  borderRadius: '4px',
-                  fontSize: '1rem',
-                  backgroundColor: 'white'
-                }}
+                onChange={e => setEditModal(prev => ({ ...prev, deal: { ...prev.deal, leadSource: e.target.value } }))}
               >
                 <option value="">選択してください</option>
                 {LEAD_SOURCES.map(source => (
                   <option key={source} value={source}>{source}</option>
                 ))}
-              </select>
-            </div>
+              </FormSelect>
+            </FormGroup>
             {/* パートナー選択時のみ紹介者とパートナー担当者を表示 */}
             {editModal.deal?.leadSource === 'パートナー' && (
               <>
-                <div style={{ marginBottom: '1rem' }}>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>紹介者（パートナー企業）</label>
-                  <select
-                    value={editModal.deal?.introducerId || ''}
-                    onChange={(e) => setEditModal(prev => ({
-                      ...prev,
-                      deal: { ...prev.deal, introducerId: e.target.value }
-                    }))}
-                    style={{
-                      width: '100%',
-                      padding: '0.75rem',
-                      border: '1px solid #ddd',
-                      borderRadius: '4px',
-                      fontSize: '1rem',
-                      backgroundColor: 'white'
+                <FormGroup>
+                  <FormLabel>紹介者（パートナー企業）</FormLabel>
+                  <FormSelect
+                    value={editModal.deal?.introducer || ''}
+                    onChange={e => {
+                      const selected = introducersList.find(i => i.name === e.target.value);
+                      setEditModal(prev => ({
+                        ...prev,
+                        deal: {
+                          ...prev.deal,
+                          introducer: e.target.value,
+                          introducerId: selected ? selected.id : ''
+                        }
+                      }));
                     }}
                   >
                     <option value="">選択してください</option>
-                    {introducersList.filter(i => i.status === 'アクティブ').map(introducer => (
-                      <option key={introducer.id} value={introducer.id}>{introducer.name}</option>
+                    {introducersList.filter(i => i.status === 'アクティブ').map(i => (
+                      <option key={i.id} value={i.name}>{i.name}</option>
                     ))}
-                  </select>
-                </div>
-                <div style={{ marginBottom: '1rem' }}>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>パートナー担当者</label>
-                  <input
+                  </FormSelect>
+                </FormGroup>
+                <FormGroup>
+                  <FormLabel>パートナー担当者</FormLabel>
+                  <FormInput
                     type="text"
                     value={editModal.deal?.partnerRepresentative || ''}
-                    onChange={(e) => setEditModal(prev => ({
-                      ...prev,
-                      deal: { ...prev.deal, partnerRepresentative: e.target.value }
-                    }))}
+                    onChange={e => setEditModal(prev => ({ ...prev, deal: { ...prev.deal, partnerRepresentative: e.target.value } }))}
                     placeholder="パートナー担当者名"
-                    style={{
-                      width: '100%',
-                      padding: '0.75rem',
-                      border: '1px solid #ddd',
-                      borderRadius: '4px',
-                      fontSize: '1rem'
-                    }}
                   />
-                </div>
+                </FormGroup>
               </>
             )}
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>想定予算（円）</label>
-              <input
+            <FormGroup>
+              <FormLabel>想定予算（円）</FormLabel>
+              <FormInput
                 type="number"
                 value={editModal.deal?.expectedBudget || ''}
-                onChange={(e) => setEditModal(prev => ({
-                  ...prev,
-                  deal: { ...prev.deal, expectedBudget: e.target.value ? Number(e.target.value) : null }
-                }))}
+                onChange={e => setEditModal(prev => ({ ...prev, deal: { ...prev.deal, expectedBudget: e.target.value ? Number(e.target.value) : null } }))}
                 placeholder="例：1000000"
                 min="0"
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: '1px solid #ddd',
-                  borderRadius: '4px',
-                  fontSize: '1rem'
-                }}
               />
-            </div>
-            <ModalButtons>
-              <ModalButton
-                className="cancel"
-                onClick={() => setEditModal({ show: false, deal: null })}
+            </FormGroup>
+            <FormGroup>
+              <FormLabel>運用ランク</FormLabel>
+              <FormSelect
+                value={editModal.deal?.rank || ''}
+                onChange={e => setEditModal(prev => ({ ...prev, deal: { ...prev.deal, rank: e.target.value } }))}
               >
+                <option value="">選択してください</option>
+                {RANKS.map(rank => (
+                  <option key={rank} value={rank}>{rank}</option>
+                ))}
+              </FormSelect>
+            </FormGroup>
+            <ModalActions>
+              <ModalBtn onClick={() => setEditModal({ show: false, deal: null })}>
                 キャンセル
-              </ModalButton>
-              <ModalButton
-                className="delete"
-                onClick={handleEditSave}
-                style={{ background: '#27ae60' }}
-              >
+              </ModalBtn>
+              <ModalBtn $primary onClick={handleEditSave}>
                 保存
-              </ModalButton>
-            </ModalButtons>
-          </ModalContent>
-        </Modal>
+              </ModalBtn>
+            </ModalActions>
+          </ModalBox>
+        </ModalOverlay>
       )}
-      
-      {/* 受注情報入力モーダル */}
+
+      {/* CSVガイドモーダル */}
+      {showCsvGuide && (
+        <ModalOverlay onClick={() => setShowCsvGuide(false)}>
+          <ModalBox onClick={(e) => e.stopPropagation()}>
+            <ModalTitle>CSV一括取り込み</ModalTitle>
+            <div style={{ fontSize: '0.85rem', color: '#2c3e50', lineHeight: 1.8 }}>
+              <p style={{ margin: '0 0 0.75rem', fontWeight: 600 }}>CSVフォーマット</p>
+              <div style={{ background: '#f8f9fa', padding: '0.5rem 0.75rem', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.8rem', marginBottom: '1rem' }}>
+                会社名,代理店名,商材名,流入経路,担当者,ステータス,想定予算,運用ランク
+              </div>
+              <ul style={{ margin: '0 0 1rem', paddingLeft: '1.25rem' }}>
+                <li>ヘッダー行あり/なし両方に対応</li>
+                <li>代理店名が「-」または空欄の場合は空欄として登録</li>
+                <li>取り込み前に件数確認ダイアログが表示されます</li>
+              </ul>
+            </div>
+            <ModalActions>
+              <ModalBtn onClick={() => setShowCsvGuide(false)}>キャンセル</ModalBtn>
+              <ModalBtn $primary as="label" style={{ cursor: 'pointer' }}>
+                ファイルを選択
+                <input
+                  type="file"
+                  accept=".csv"
+                  style={{ display: 'none' }}
+                  onChange={(e) => { setShowCsvGuide(false); handleCsvImport(e); }}
+                />
+              </ModalBtn>
+            </ModalActions>
+          </ModalBox>
+        </ModalOverlay>
+      )}
+
+      {/* 新規追加モーダル */}
+      {showAddModal && (
+        <ModalOverlay onClick={() => setShowAddModal(false)}>
+          <ModalBox onClick={(e) => e.stopPropagation()}>
+            <ModalTitle>新規案件を追加</ModalTitle>
+            <FormGroup>
+              <FormLabel>会社名 *</FormLabel>
+              <FormInput
+                type="text"
+                placeholder="会社名を入力"
+                value={addForm.companyName}
+                onChange={e => setAddForm(prev => ({ ...prev, companyName: e.target.value }))}
+              />
+            </FormGroup>
+            <FormGroup>
+              <FormLabel>商材名 *</FormLabel>
+              <FormInput
+                type="text"
+                placeholder="商材名を入力"
+                value={addForm.productName}
+                onChange={e => setAddForm(prev => ({ ...prev, productName: e.target.value }))}
+              />
+            </FormGroup>
+            <FormGroup>
+              <FormLabel>流入経路</FormLabel>
+              <FormSelect
+                value={addForm.leadSource}
+                onChange={e => setAddForm(prev => ({ ...prev, leadSource: e.target.value, introducer: '', introducerId: '', partnerRepresentative: '' }))}
+              >
+                <option value="">選択してください</option>
+                {LEAD_SOURCES.map(source => (
+                  <option key={source} value={source}>{source}</option>
+                ))}
+              </FormSelect>
+            </FormGroup>
+            {/* パートナー選択時のみ紹介者（代理店）セレクトを表示 */}
+            {addForm.leadSource === 'パートナー' ? (
+              <>
+                <FormGroup>
+                  <FormLabel>紹介者（パートナー企業）</FormLabel>
+                  <FormSelect
+                    value={addForm.introducerId || ''}
+                    onChange={e => {
+                      const selected = introducersList.find(i => i.id === e.target.value);
+                      setAddForm(prev => ({
+                        ...prev,
+                        introducerId: e.target.value,
+                        introducer: selected ? selected.name : ''
+                      }));
+                    }}
+                  >
+                    <option value="">選択してください</option>
+                    {introducersList.filter(i => i.status === 'アクティブ').map(i => (
+                      <option key={i.id} value={i.id}>{i.name}</option>
+                    ))}
+                  </FormSelect>
+                </FormGroup>
+                <FormGroup>
+                  <FormLabel>パートナー担当者</FormLabel>
+                  <FormInput
+                    type="text"
+                    placeholder="パートナー担当者名"
+                    value={addForm.partnerRepresentative || ''}
+                    onChange={e => setAddForm(prev => ({ ...prev, partnerRepresentative: e.target.value }))}
+                  />
+                </FormGroup>
+              </>
+            ) : null}
+            <FormGroup>
+              <FormLabel>担当者</FormLabel>
+              <FormSelect
+                value={addForm.representative}
+                onChange={e => setAddForm(prev => ({ ...prev, representative: e.target.value }))}
+              >
+                <option value="">選択してください</option>
+                {SALES_REPRESENTATIVES.map(rep => (
+                  <option key={rep} value={rep}>{rep}</option>
+                ))}
+              </FormSelect>
+            </FormGroup>
+            <FormGroup>
+              <FormLabel>ステータス</FormLabel>
+              <FormSelect
+                value={addForm.status}
+                onChange={e => setAddForm(prev => ({ ...prev, status: e.target.value }))}
+              >
+                {STATUSES.map(status => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
+              </FormSelect>
+            </FormGroup>
+            <FormGroup>
+              <FormLabel>想定予算（円）</FormLabel>
+              <FormInput
+                type="number"
+                placeholder="例：1000000"
+                value={addForm.expectedBudget}
+                onChange={e => setAddForm(prev => ({ ...prev, expectedBudget: e.target.value }))}
+                min="0"
+              />
+            </FormGroup>
+            <FormGroup>
+              <FormLabel>運用ランク</FormLabel>
+              <FormSelect
+                value={addForm.rank}
+                onChange={e => setAddForm(prev => ({ ...prev, rank: e.target.value }))}
+              >
+                <option value="">選択してください</option>
+                {RANKS.map(rank => (
+                  <option key={rank} value={rank}>{rank}</option>
+                ))}
+              </FormSelect>
+            </FormGroup>
+            <ModalActions>
+              <ModalBtn onClick={() => setShowAddModal(false)}>キャンセル</ModalBtn>
+              <ModalBtn
+                $primary
+                onClick={handleAddDeal}
+                disabled={!addForm.companyName.trim() || !addForm.productName.trim() || isSaving}
+              >
+                {isSaving ? '保存中...' : '追加'}
+              </ModalBtn>
+            </ModalActions>
+          </ModalBox>
+        </ModalOverlay>
+      )}
+
+      {/* 受注情報入力モーダル（フェーズ8時 → 既存案件へ移行） */}
       <ReceivedOrderModal
         isOpen={receivedOrderModal.show}
         onClose={handleCancelReceivedOrder}
@@ -1625,8 +1557,19 @@ function ProgressDashboard() {
         deal={receivedOrderModal.deal}
         isLoading={isSavingOrder}
       />
-    </DashboardContainer>
+
+      {/* 右側詳細パネル */}
+      {selectedDeal && (
+        <ProjectDetailPanel
+          project={selectedDeal}
+          onClose={handlePanelClose}
+          onProjectUpdate={handleProjectUpdate}
+          mode="newCase"
+          onPhase8Submitted={handlePhase8Submitted}
+        />
+      )}
+    </PageContainer>
   );
 }
 
-export default ProgressDashboard; 
+export default ProgressDashboard;

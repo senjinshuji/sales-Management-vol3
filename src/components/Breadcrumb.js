@@ -63,7 +63,7 @@ const Separator = styled(FiChevronRight)`
 const routeConfig = {
   // 管理者用ルート
   '/': { name: 'ホーム', icon: FiHome },
-  '/progress-dashboard': { name: '案件一覧', icon: null },
+  '/progress-dashboard': { name: '新規案件一覧', icon: null },
   '/log-entry': { name: 'アクションログ記録', icon: null },
   '/action-logs': { name: 'アクションログ一覧', icon: null },
   '/kanban': { name: '看板ボード', icon: null },
@@ -78,9 +78,9 @@ const routeConfig = {
   '/posting-schedule': { name: '投稿本数管理', icon: null },
   '/posting-calendar': { name: '投稿カレンダー', icon: null },
   '/task-progress': { name: 'ToDo管理', icon: null },
-  '/project-management': { name: '既存案件', icon: null },
+  '/project-management': { name: '既存案件一覧', icon: null },
   '/staff-master': { name: '人管理', icon: null },
-  '/next-action-management': { name: 'ネクストアクション管理', icon: null },
+  '/next-action-management': { name: 'NA管理', icon: null },
   
   // パートナー用ルート
   '/partner': { name: 'ホーム', icon: FiHome },

@@ -210,7 +210,7 @@ const NextActionManagementPage = () => {
   const handleToggleStatus = async (na) => {
     const newStatus = (na.actionStatus === STATUS_DONE) ? STATUS_ACTIVE : STATUS_DONE;
     try {
-      await updateSalesEntryStatus(na.projectId, na.recordId, na.id, newStatus);
+      await updateSalesEntryStatus(na.projectId, na.recordId, na.id, newStatus, na.subCol || 'salesRecords');
       setAllNas(prev => prev.map(item =>
         (item.id === na.id && item.projectId === na.projectId && item.recordId === na.recordId)
           ? { ...item, actionStatus: newStatus }

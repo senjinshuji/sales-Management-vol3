@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import { FiCalendar, FiDollarSign, FiSave, FiX } from 'react-icons/fi';
+import { FiCalendar, FiDollarSign, FiSave, FiX, FiUser } from 'react-icons/fi';
+import { fetchAllStaff } from '../services/staffService.js';
 
 const ModalOverlay = styled.div`
   position: fixed;
@@ -12,7 +13,7 @@ const ModalOverlay = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 2000;
 `;
 
 const ModalContent = styled.div`
@@ -106,6 +107,21 @@ const Input = styled.input`
   &.error {
     border-color: #e74c3c;
     box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.1);
+  }
+`;
+
+const Select = styled.select`
+  padding: 0.75rem;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  font-size: 1rem;
+  transition: border-color 0.3s ease;
+  background: white;
+
+  &:focus {
+    outline: none;
+    border-color: #27ae60;
+    box-shadow: 0 0 0 3px rgba(39, 174, 96, 0.1);
   }
 `;
 
@@ -207,12 +223,30 @@ function ReceivedOrderModal({
 
   const [formData, setFormData] = useState({
     receivedOrderMonth: new Date().toISOString().slice(0, 7), // YYYY-MM形式、デフォルトは今月
-    receivedOrderAmount: getInitialAmount()
+    receivedOrderAmount: getInitialAmount(),
+    startDate: '',
+    endDate: '',
+    salesRep: '',
+    operatorRep: ''
   });
   const [errors, setErrors] = useState({});
+  const [staffList, setStaffList] = useState([]);
+
+  // スタッフマスターを取得
+  useEffect(() => {
+    const loadStaff = async () => {
+      try {
+        const staff = await fetchAllStaff();
+        setStaffList(staff);
+      } catch (error) {
+        console.error('Failed to fetch staff:', error);
+      }
+    };
+    loadStaff();
+  }, []);
 
   // dealが変わったら金額を更新
-  React.useEffect(() => {
+  useEffect(() => {
     if (deal && deal.expectedBudget) {
       setFormData(prev => ({
         ...prev,
@@ -270,7 +304,11 @@ function ReceivedOrderModal({
       await onSave({
         dealId: deal.id,
         receivedOrderMonth: formData.receivedOrderMonth,
-        receivedOrderAmount: Number(formData.receivedOrderAmount)
+        receivedOrderAmount: Number(formData.receivedOrderAmount),
+        startDate: formData.startDate,
+        endDate: formData.endDate,
+        salesRep: formData.salesRep,
+        operatorRep: formData.operatorRep
       });
     } catch (error) {
       console.error('受注情報保存エラー:', error);
@@ -281,7 +319,11 @@ function ReceivedOrderModal({
   const handleCancel = () => {
     setFormData({
       receivedOrderMonth: new Date().toISOString().slice(0, 7),
-      receivedOrderAmount: ''
+      receivedOrderAmount: '',
+      startDate: '',
+      endDate: '',
+      salesRep: '',
+      operatorRep: ''
     });
     setErrors({});
     onClose();
@@ -364,10 +406,74 @@ function ReceivedOrderModal({
             )}
           </FormGroup>
 
+          <FormGroup>
+            <Label>
+              <FiCalendar />
+              開始日
+            </Label>
+            <Input
+              type="date"
+              name="startDate"
+              value={formData.startDate}
+              onChange={handleInputChange}
+              disabled={isLoading}
+            />
+          </FormGroup>
+
+          <FormGroup>
+            <Label>
+              <FiCalendar />
+              終了日
+            </Label>
+            <Input
+              type="date"
+              name="endDate"
+              value={formData.endDate}
+              onChange={handleInputChange}
+              disabled={isLoading}
+            />
+          </FormGroup>
+
+          <FormGroup>
+            <Label>
+              <FiUser />
+              営業担当
+            </Label>
+            <Select
+              name="salesRep"
+              value={formData.salesRep}
+              onChange={handleInputChange}
+              disabled={isLoading}
+            >
+              <option value="">選択してください</option>
+              {staffList.filter(s => s.role === 'sales').map(staff => (
+                <option key={staff.id} value={staff.name}>{staff.name}</option>
+              ))}
+            </Select>
+          </FormGroup>
+
+          <FormGroup>
+            <Label>
+              <FiUser />
+              運用担当
+            </Label>
+            <Select
+              name="operatorRep"
+              value={formData.operatorRep}
+              onChange={handleInputChange}
+              disabled={isLoading}
+            >
+              <option value="">選択してください</option>
+              {staffList.filter(s => s.role === 'operator').map(staff => (
+                <option key={staff.id} value={staff.name}>{staff.name}</option>
+              ))}
+            </Select>
+          </FormGroup>
+
           <ButtonGroup>
-            <Button 
-              type="button" 
-              className="secondary" 
+            <Button
+              type="button"
+              className="secondary"
               onClick={handleCancel}
               disabled={isLoading}
             >

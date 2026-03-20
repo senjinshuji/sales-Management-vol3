@@ -201,9 +201,9 @@ export const saveMonthlyData = async (projectId, month, data) => {
  * @param {string} projectId - 案件ID
  * @param {object} data - 営業記録データ
  */
-export const addSalesRecord = async (projectId, data) => {
+export const addSalesRecord = async (projectId, data, subCol = 'salesRecords') => {
   try {
-    const recordsRef = collection(db, 'progressDashboard', projectId, 'salesRecords');
+    const recordsRef = collection(db, 'progressDashboard', projectId, subCol);
     await addDoc(recordsRef, data);
   } catch (error) {
     console.error('Failed to add sales record:', error);
@@ -216,9 +216,9 @@ export const addSalesRecord = async (projectId, data) => {
  * @param {string} projectId - 案件ID
  * @returns {Promise<Array>} 営業記録一覧
  */
-export const fetchSalesRecords = async (projectId) => {
+export const fetchSalesRecords = async (projectId, subCol = 'salesRecords') => {
   try {
-    const recordsRef = collection(db, 'progressDashboard', projectId, 'salesRecords');
+    const recordsRef = collection(db, 'progressDashboard', projectId, subCol);
     const snapshot = await getDocs(recordsRef);
     return snapshot.docs.map((docSnap) => ({
       id: docSnap.id,
@@ -236,9 +236,9 @@ export const fetchSalesRecords = async (projectId) => {
  * @param {string} recordId - 記録ID
  * @param {object} data - 更新データ
  */
-export const updateSalesRecord = async (projectId, recordId, data) => {
+export const updateSalesRecord = async (projectId, recordId, data, subCol = 'salesRecords') => {
   try {
-    const recordRef = doc(db, 'progressDashboard', projectId, 'salesRecords', recordId);
+    const recordRef = doc(db, 'progressDashboard', projectId, subCol, recordId);
     await updateDoc(recordRef, data);
   } catch (error) {
     console.error('Failed to update sales record:', error);
@@ -251,9 +251,9 @@ export const updateSalesRecord = async (projectId, recordId, data) => {
  * @param {string} projectId - 案件ID
  * @param {string} recordId - 記録ID
  */
-export const deleteSalesRecord = async (projectId, recordId) => {
+export const deleteSalesRecord = async (projectId, recordId, subCol = 'salesRecords') => {
   try {
-    const recordRef = doc(db, 'progressDashboard', projectId, 'salesRecords', recordId);
+    const recordRef = doc(db, 'progressDashboard', projectId, subCol, recordId);
     await deleteDoc(recordRef);
   } catch (error) {
     console.error('Failed to delete sales record:', error);
@@ -519,9 +519,9 @@ export const deleteSalesRecordAction = async (projectId, recordId, actionId) => 
  * @param {string} recordId - 営業記録ID
  * @param {object} entryData - { memoContent, actionContent, actionDueDate, actionAssignee, phase }
  */
-export const addSalesEntry = async (projectId, recordId, entryData) => {
+export const addSalesEntry = async (projectId, recordId, entryData, subCol = 'salesRecords') => {
   try {
-    const entriesRef = collection(db, 'progressDashboard', projectId, 'salesRecords', recordId, 'entries');
+    const entriesRef = collection(db, 'progressDashboard', projectId, subCol, recordId, 'entries');
     await addDoc(entriesRef, {
       ...entryData,
       createdAt: serverTimestamp()
@@ -538,9 +538,9 @@ export const addSalesEntry = async (projectId, recordId, entryData) => {
  * @param {string} recordId - 営業記録ID
  * @returns {Promise<Array>} エントリ一覧
  */
-export const fetchSalesEntries = async (projectId, recordId) => {
+export const fetchSalesEntries = async (projectId, recordId, subCol = 'salesRecords') => {
   try {
-    const entriesRef = collection(db, 'progressDashboard', projectId, 'salesRecords', recordId, 'entries');
+    const entriesRef = collection(db, 'progressDashboard', projectId, subCol, recordId, 'entries');
     const snapshot = await getDocs(entriesRef);
     return snapshot.docs
       .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
@@ -561,9 +561,9 @@ export const fetchSalesEntries = async (projectId, recordId) => {
  * @param {string} recordId - 営業記録ID
  * @param {string} entryId - エントリID
  */
-export const deleteSalesEntry = async (projectId, recordId, entryId) => {
+export const deleteSalesEntry = async (projectId, recordId, entryId, subCol = 'salesRecords') => {
   try {
-    const entryRef = doc(db, 'progressDashboard', projectId, 'salesRecords', recordId, 'entries', entryId);
+    const entryRef = doc(db, 'progressDashboard', projectId, subCol, recordId, 'entries', entryId);
     await deleteDoc(entryRef);
   } catch (error) {
     console.error('Failed to delete sales entry:', error);
@@ -578,9 +578,9 @@ export const deleteSalesEntry = async (projectId, recordId, entryId) => {
  * @param {string} entryId - エントリID
  * @param {string} status - "active" or "done"
  */
-export const updateSalesEntryStatus = async (projectId, recordId, entryId, status) => {
+export const updateSalesEntryStatus = async (projectId, recordId, entryId, status, subCol = 'salesRecords') => {
   try {
-    const entryRef = doc(db, 'progressDashboard', projectId, 'salesRecords', recordId, 'entries', entryId);
+    const entryRef = doc(db, 'progressDashboard', projectId, subCol, recordId, 'entries', entryId);
     await updateDoc(entryRef, { actionStatus: status });
   } catch (error) {
     console.error('Failed to update sales entry status:', error);
@@ -594,36 +594,32 @@ export const updateSalesEntryStatus = async (projectId, recordId, entryId, statu
  */
 export const fetchAllNextActions = async () => {
   try {
-    // フェーズ8の案件を取得
+    // 全案件を取得（フェーズ制限なし）
     const progressRef = collection(db, 'progressDashboard');
-    const q = query(progressRef, where('status', '==', 'フェーズ8'));
-    const projectsSnap = await getDocs(q);
+    const projectsSnap = await getDocs(progressRef);
 
     const allNas = [];
 
-    for (const projectDoc of projectsSnap.docs) {
+    // 指定サブコレクションからNAエントリを収集するヘルパー
+    const collectFromSubCol = async (projectDoc, subColName) => {
       const projectId = projectDoc.id;
       const projectData = projectDoc.data();
-
-      // 営業記録を取得
-      const recordsRef = collection(db, 'progressDashboard', projectId, 'salesRecords');
+      const recordsRef = collection(db, 'progressDashboard', projectId, subColName);
       const recordsSnap = await getDocs(recordsRef);
 
       for (const recordDoc of recordsSnap.docs) {
         const recordId = recordDoc.id;
-
-        // エントリを取得
-        const entriesRef = collection(db, 'progressDashboard', projectId, 'salesRecords', recordId, 'entries');
+        const entriesRef = collection(db, 'progressDashboard', projectId, subColName, recordId, 'entries');
         const entriesSnap = await getDocs(entriesRef);
 
         entriesSnap.docs.forEach((entryDoc) => {
           const entry = entryDoc.data();
-          // actionContentがあるものだけ
           if (entry.actionContent) {
             allNas.push({
               id: entryDoc.id,
               projectId,
               recordId,
+              subCol: subColName,
               companyName: projectData.companyName || '',
               productName: projectData.productName || '',
               ...entry
@@ -631,7 +627,17 @@ export const fetchAllNextActions = async () => {
           }
         });
       }
-    }
+    };
+
+    // 全案件について両方のサブコレクションを並列取得
+    await Promise.all(
+      projectsSnap.docs.map(async (projectDoc) => {
+        await Promise.all([
+          collectFromSubCol(projectDoc, 'salesRecords'),
+          collectFromSubCol(projectDoc, 'newCaseSalesRecords')
+        ]);
+      })
+    );
 
     // 作成日時降順
     allNas.sort((a, b) => {

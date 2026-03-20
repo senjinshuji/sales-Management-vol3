@@ -266,7 +266,7 @@ function AdminApp() {
               <NavDropdownItem>
                 <NavDropdownLink to="/progress-dashboard">
                   <FiList />
-                  案件一覧
+                  新規案件一覧
                 </NavDropdownLink>
               </NavDropdownItem>
               <NavDropdownItem>
@@ -289,26 +289,18 @@ function AdminApp() {
               </NavDropdownItem>
             </NavDropdownMenu>
           </NavDropdown>
-          <NavDropdown>
-            <NavDropdownButton>
+          <NavItem>
+            <NavLink to="/project-management">
               <FiBriefcase />
-              案件管理
-            </NavDropdownButton>
-            <NavDropdownMenu>
-              <NavDropdownItem>
-                <NavDropdownLink to="/project-management">
-                  <FiBriefcase />
-                  既存案件
-                </NavDropdownLink>
-              </NavDropdownItem>
-              <NavDropdownItem>
-                <NavDropdownLink to="/next-action-management">
-                  <FiClipboard />
-                  ネクストアクション管理
-                </NavDropdownLink>
-              </NavDropdownItem>
-            </NavDropdownMenu>
-          </NavDropdown>
+              既存案件
+            </NavLink>
+          </NavItem>
+          <NavItem>
+            <NavLink to="/next-action-management">
+              <FiClipboard />
+              NA管理
+            </NavLink>
+          </NavItem>
           <NavDropdown>
             <NavDropdownButton>
               <FiUsers />

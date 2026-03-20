@@ -914,7 +914,7 @@ const OperatorTab = ({ project, onProjectUpdate }) => {
 // 営業記録展開コンテンツ（メモ + NA統合入力）
 // ============================================
 
-const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldChange, operators, salesReps }) => {
+const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldChange, operators, salesReps, subCol = 'salesRecords', onPhase8Submitted }) => {
   const [entries, setEntries] = useState([]);
   const [memoContent, setMemoContent] = useState('');
   const [actionContent, setActionContent] = useState('');
@@ -947,14 +947,14 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
     if (!projectId || !record.id) return;
     try {
       setIsLoading(true);
-      const data = await fetchSalesEntries(projectId, record.id);
+      const data = await fetchSalesEntries(projectId, record.id, subCol);
       setEntries(data);
     } catch (error) {
       console.error('Failed to load sales entries:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [projectId, record.id]);
+  }, [projectId, record.id, subCol]);
 
   useEffect(() => {
     loadEntries();
@@ -981,10 +981,10 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
         actionAssignee: actionAssignee || '',
         phase: currentPhase,
         phaseChange: phaseChanged ? `${record.phase}→${currentPhase}` : ''
-      });
+      }, subCol);
       // フェーズが変更されていたら営業記録も更新
       if (phaseChanged) {
-        await updateSalesRecord(projectId, record.id, { phase: currentPhase });
+        await updateSalesRecord(projectId, record.id, { phase: currentPhase }, subCol);
         onPhaseUpdate(record.id, currentPhase);
       }
       setMemoContent('');
@@ -992,6 +992,11 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
       setActionDueDate('');
       setActionAssignee('');
       await loadEntries();
+
+      // フェーズ8に変更された場合、既存案件への移行を提案
+      if (phaseChanged && currentPhase === 'フェーズ8' && onPhase8Submitted) {
+        onPhase8Submitted();
+      }
     } catch (error) {
       console.error('Failed to add sales entry:', error);
     }
@@ -1001,7 +1006,7 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
   const handleToggleNaStatus = async (entryId, currentStatus) => {
     const newStatus = currentStatus === 'done' ? 'active' : 'done';
     try {
-      await updateSalesEntryStatus(projectId, record.id, entryId, newStatus);
+      await updateSalesEntryStatus(projectId, record.id, entryId, newStatus, subCol);
       setEntries(prev => prev.map(e =>
         e.id === entryId ? { ...e, actionStatus: newStatus } : e
       ));
@@ -1013,7 +1018,7 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
   /** エントリ削除 */
   const handleDelete = async (entryId) => {
     try {
-      await deleteSalesEntry(projectId, record.id, entryId);
+      await deleteSalesEntry(projectId, record.id, entryId, subCol);
       await loadEntries();
     } catch (error) {
       console.error('Failed to delete sales entry:', error);
@@ -1235,7 +1240,7 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
 // タブ2: 営業向け
 // ============================================
 
-const SalesTab = ({ project, operators, salesReps }) => {
+const SalesTab = ({ project, operators, salesReps, subCol = 'salesRecords', onPhaseChange, onPhase8Submitted }) => {
   const [records, setRecords] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
   const [isAdding, setIsAdding] = useState(false);
@@ -1247,7 +1252,7 @@ const SalesTab = ({ project, operators, salesReps }) => {
   const loadRecords = useCallback(async () => {
     if (!project.id) return;
     try {
-      const data = await fetchSalesRecords(project.id);
+      const data = await fetchSalesRecords(project.id, subCol);
       data.sort((a, b) => {
         const aDate = a.createdAt?.toMillis?.() || 0;
         const bDate = b.createdAt?.toMillis?.() || 0;
@@ -1257,7 +1262,7 @@ const SalesTab = ({ project, operators, salesReps }) => {
     } catch (error) {
       console.error('Failed to load sales records:', error);
     }
-  }, [project.id]);
+  }, [project.id, subCol]);
 
   useEffect(() => {
     loadRecords();
@@ -1280,7 +1285,7 @@ const SalesTab = ({ project, operators, salesReps }) => {
         startDate: editForm.startDate,
         endDate: editForm.endDate,
         createdAt: new Date()
-      });
+      }, subCol);
       setIsAdding(false);
       await loadRecords();
     } catch (error) {
@@ -1291,7 +1296,7 @@ const SalesTab = ({ project, operators, salesReps }) => {
   const handleDelete = async (e, recordId) => {
     e.stopPropagation();
     try {
-      await deleteSalesRecord(project.id, recordId);
+      await deleteSalesRecord(project.id, recordId, subCol);
       if (expandedId === recordId) setExpandedId(null);
       await loadRecords();
     } catch (error) {
@@ -1303,6 +1308,8 @@ const SalesTab = ({ project, operators, salesReps }) => {
     setRecords(prev => prev.map(r =>
       r.id === recordId ? { ...r, phase: newPhase } : r
     ));
+    // ヘッダーのフェーズも即座に更新
+    if (onPhaseChange) onPhaseChange(newPhase);
   };
 
   /** 営業記録のフィールドをインラインで変更・保存（イベント経由） */
@@ -1315,7 +1322,7 @@ const SalesTab = ({ project, operators, salesReps }) => {
   /** 営業記録のフィールドを変更・保存（値指定） */
   const saveRecordField = async (recordId, field, value) => {
     try {
-      await updateSalesRecord(project.id, recordId, { [field]: value });
+      await updateSalesRecord(project.id, recordId, { [field]: value }, subCol);
       setRecords(prev => prev.map(r =>
         r.id === recordId ? { ...r, [field]: value } : r
       ));
@@ -1403,6 +1410,8 @@ const SalesTab = ({ project, operators, salesReps }) => {
                     onRecordFieldChange={saveRecordField}
                     operators={operators}
                     salesReps={salesReps}
+                    subCol={subCol}
+                    onPhase8Submitted={onPhase8Submitted}
                   />
                 </ExpandedSection>
               )}
@@ -1654,10 +1663,42 @@ const KeyPersonTab = ({ project }) => {
 // メインコンポーネント
 // ============================================
 
-const ProjectDetailPanel = ({ project, onClose, onProjectUpdate }) => {
-  const [activeTab, setActiveTab] = useState('operator');
+const ProjectDetailPanel = ({ project, onClose, onProjectUpdate, mode, onPhase8Submitted }) => {
+  const [activeTab, setActiveTab] = useState(mode === 'newCase' ? 'sales' : 'operator');
   const [operators, setOperators] = useState([]);
   const [salesReps, setSalesReps] = useState([]);
+  const [latestPhase, setLatestPhase] = useState(project.status || '');
+
+  // モードに応じたサブコレクション名
+  const salesSubCol = mode === 'newCase' ? 'newCaseSalesRecords' : 'salesRecords';
+
+  // 営業記録の最新フェーズを取得
+  useEffect(() => {
+    if (!project.id) return;
+    const loadLatestPhase = async () => {
+      try {
+        const records = await fetchSalesRecords(project.id, salesSubCol);
+        if (records.length > 0) {
+          records.sort((a, b) => {
+            const aTime = a.createdAt?.toMillis?.() || a.createdAt?.seconds * 1000 || 0;
+            const bTime = b.createdAt?.toMillis?.() || b.createdAt?.seconds * 1000 || 0;
+            return bTime - aTime;
+          });
+          if (records[0].phase) {
+            setLatestPhase(records[0].phase);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load latest phase:', error);
+      }
+    };
+    loadLatestPhase();
+  }, [project.id, salesSubCol]);
+
+  // SalesTabからフェーズ更新を受け取るコールバック
+  const handlePhaseChange = useCallback((newPhase) => {
+    setLatestPhase(newPhase);
+  }, []);
 
   // Firestoreからスタッフ一覧を取得
   useEffect(() => {
@@ -1710,13 +1751,30 @@ const ProjectDetailPanel = ({ project, onClose, onProjectUpdate }) => {
             </HeaderItem>
             <HeaderItem>
               <HeaderLabel>代理店名</HeaderLabel>
-              <HeaderValue>{project.agencyName || '-'}</HeaderValue>
+              <HeaderValue>{project.introducer || '-'}</HeaderValue>
             </HeaderItem>
             <HeaderItem>
               <HeaderLabel>商材名</HeaderLabel>
               <HeaderValue>{project.productName || '-'}</HeaderValue>
             </HeaderItem>
-            {project.continuationStatus && (
+            {mode === 'newCase' && latestPhase ? (
+              <HeaderItem>
+                <HeaderLabel>フェーズ</HeaderLabel>
+                <HeaderValue>
+                  <span style={{
+                    display: 'inline-block',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    color: 'white',
+                    background: STATUS_COLORS[latestPhase] || '#95a5a6'
+                  }}>
+                    {latestPhase}
+                  </span>
+                </HeaderValue>
+              </HeaderItem>
+            ) : project.continuationStatus ? (
               <HeaderItem>
                 <HeaderLabel>継続ステータス</HeaderLabel>
                 <HeaderValue>
@@ -1733,44 +1791,46 @@ const ProjectDetailPanel = ({ project, onClose, onProjectUpdate }) => {
                   </span>
                 </HeaderValue>
               </HeaderItem>
-            )}
+            ) : null}
           </HeaderGrid>
         </PanelHeader>
 
-        {/* タブバー */}
-        <TabBar>
-          <Tab
-            $active={activeTab === 'operator'}
-            onClick={() => setActiveTab('operator')}
-          >
-            運用者向け
-          </Tab>
-          <Tab
-            $active={activeTab === 'sales'}
-            onClick={() => setActiveTab('sales')}
-          >
-            営業向け
-          </Tab>
-          <Tab
-            $active={activeTab === 'keyPerson'}
-            onClick={() => setActiveTab('keyPerson')}
-          >
-            キーパーソン
-          </Tab>
-        </TabBar>
+        {/* タブバー（newCaseモードでは非表示） */}
+        {mode !== 'newCase' && (
+          <TabBar>
+            <Tab
+              $active={activeTab === 'operator'}
+              onClick={() => setActiveTab('operator')}
+            >
+              運用者向け
+            </Tab>
+            <Tab
+              $active={activeTab === 'sales'}
+              onClick={() => setActiveTab('sales')}
+            >
+              営業向け
+            </Tab>
+            <Tab
+              $active={activeTab === 'keyPerson'}
+              onClick={() => setActiveTab('keyPerson')}
+            >
+              キーパーソン
+            </Tab>
+          </TabBar>
+        )}
 
         {/* タブコンテンツ */}
         <TabContent>
-          {activeTab === 'operator' && (
+          {activeTab === 'operator' && mode !== 'newCase' && (
             <OperatorTab
               project={project}
               onProjectUpdate={onProjectUpdate}
             />
           )}
           {activeTab === 'sales' && (
-            <SalesTab project={project} operators={operators} salesReps={salesReps} />
+            <SalesTab project={project} operators={operators} salesReps={salesReps} subCol={salesSubCol} onPhaseChange={handlePhaseChange} onPhase8Submitted={onPhase8Submitted} />
           )}
-          {activeTab === 'keyPerson' && (
+          {activeTab === 'keyPerson' && mode !== 'newCase' && (
             <KeyPersonTab project={project} />
           )}
         </TabContent>
