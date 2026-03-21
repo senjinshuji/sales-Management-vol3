@@ -93,7 +93,7 @@ const calcElapsedDays = (records) => {
   return diff;
 };
 
-/** 累計売上（全営業記録のbudget合計） */
+/** 累計予算（全営業記録のbudget合計） */
 const calcTotalSales = (records) => {
   if (!records || records.length === 0) return 0;
   return records.reduce((sum, r) => sum + (Number(r.budget) || 0), 0);
@@ -722,7 +722,7 @@ const ProjectManagementPage = () => {
                 <TableHeaderCell>商材名</TableHeaderCell>
                 <TableHeaderCell>運用ランク</TableHeaderCell>
                 <TableHeaderCell $sortable onClick={() => handleSort('totalSales')}>
-                  累計売上{renderSortIcon('totalSales')}
+                  累計予算{renderSortIcon('totalSales')}
                 </TableHeaderCell>
                 <TableHeaderCell>継続ステータス</TableHeaderCell>
                 <TableHeaderCell $sortable onClick={() => handleSort('elapsedDays')}>
