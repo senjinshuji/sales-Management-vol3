@@ -58,27 +58,29 @@ export const fetchProjectSalesData = async (projectId) => {
         return bTime - aTime;
       });
 
-    // 最新の営業記録のエントリを取得
-    let latestEntry = null;
+    // 全レコードからエントリを収集し、アクティブなNA全件を返す
+    const activeNaEntries = [];
     if (records.length > 0) {
-      const latestRecord = records[0];
-      const entriesRef = collection(db, 'progressDashboard', projectId, 'salesRecords', latestRecord.id, 'entries');
-      const entriesSnap = await getDocs(entriesRef);
-      const entries = entriesSnap.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => {
-          const aTime = a.createdAt?.toMillis?.() || 0;
-          const bTime = b.createdAt?.toMillis?.() || 0;
-          return bTime - aTime;
+      await Promise.all(records.map(async (record) => {
+        const entriesRef = collection(db, 'progressDashboard', projectId, 'salesRecords', record.id, 'entries');
+        const entriesSnap = await getDocs(entriesRef);
+        entriesSnap.docs.forEach((d) => {
+          const entry = { id: d.id, ...d.data() };
+          if (entry.actionContent && entry.actionStatus !== 'done') {
+            activeNaEntries.push(entry);
+          }
         });
-      // actionContentがありかつdoneでない最新エントリを取得
-      const activeNaEntry = entries.find(e => e.actionContent && e.actionStatus !== 'done');
-      if (activeNaEntry) {
-        latestEntry = activeNaEntry;
-      }
+      }));
+      // createdAt降順でソート
+      activeNaEntries.sort((a, b) => {
+        const aTime = a.createdAt?.toMillis?.() || 0;
+        const bTime = b.createdAt?.toMillis?.() || 0;
+        return bTime - aTime;
+      });
     }
 
-    return { records, latestEntry };
+    const latestEntry = activeNaEntries[0] || null;
+    return { records, latestEntry, activeNaEntries };
   } catch (error) {
     console.error('Failed to fetch project sales data:', error);
     return { records: [], latestEntry: null };

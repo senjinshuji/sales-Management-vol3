@@ -65,18 +65,23 @@ const fetchSalesInfo = async (dealId) => {
       latestPhase = records[0].phase || null;
     }
 
-    // 最新アクティブNA
-    let naEntry = null;
+    // アクティブNA全件を収集（createdAt降順）
+    const activeNaEntries = [];
     if (entries.length > 0) {
       entries.sort((a, b) => {
         const aTime = a.createdAt?.toMillis?.() || a.createdAt?.seconds * 1000 || 0;
         const bTime = b.createdAt?.toMillis?.() || b.createdAt?.seconds * 1000 || 0;
         return bTime - aTime;
       });
-      naEntry = entries.find(e => e.actionContent && e.actionStatus !== 'done') || null;
+      entries.forEach(e => {
+        if (e.actionContent && e.actionStatus !== 'done') {
+          activeNaEntries.push(e);
+        }
+      });
     }
 
-    return { naEntry, latestPhase };
+    const naEntry = activeNaEntries[0] || null;
+    return { naEntry, latestPhase, activeNaEntries };
   } catch (error) {
     console.error('Failed to fetch sales info:', error);
     return { naEntry: null, latestPhase: null };
@@ -1249,9 +1254,14 @@ function ProgressDashboard() {
                 // 営業記録からNA・フェーズを取得（フォールバック: deal直下のフィールド）
                 const salesInfo = naDataMap[deal.id] || {};
                 const naEntry = salesInfo.naEntry;
+                const activeNaEntries = salesInfo.activeNaEntries || [];
                 const displayPhase = salesInfo.latestPhase || deal.status || '';
                 const latestNaContent = naEntry?.actionContent || '';
-                const latestNaDueDate = naEntry?.actionDueDate || '';
+                // 複数NAの中で最も近い期日を表示
+                const closestDueDate = activeNaEntries.length > 0
+                  ? activeNaEntries.map(e => e.actionDueDate).filter(Boolean).sort()[0] || ''
+                  : '';
+                const latestNaDueDate = closestDueDate || naEntry?.actionDueDate || '';
                 return (
                   <TableRow
                     key={deal.id}
@@ -1289,19 +1299,31 @@ function ProgressDashboard() {
                     <TableCell>
                       {displayPhase === 'フェーズ8' ? (
                         <span style={{ color: '#999' }}>-</span>
-                      ) : latestNaContent ? (
+                      ) : activeNaEntries.length === 0 ? '-' : (
                         <NaText>
-                          {latestNaContent.length > NA_TRUNCATE_LENGTH
-                            ? latestNaContent.slice(0, NA_TRUNCATE_LENGTH) + '...'
-                            : latestNaContent
-                          }
-                          {latestNaContent.length > NA_TRUNCATE_LENGTH && (
-                            <MoreLink onClick={(e) => { e.stopPropagation(); setNaModalText(latestNaContent); }}>
-                              続きを見る
-                            </MoreLink>
-                          )}
+                          {activeNaEntries.map((na, idx) => {
+                            const text = na.actionContent || '';
+                            const truncated = text.length > NA_TRUNCATE_LENGTH
+                              ? text.slice(0, NA_TRUNCATE_LENGTH) + '...'
+                              : text;
+                            return (
+                              <div key={na.id || idx} style={{ marginBottom: idx < activeNaEntries.length - 1 ? '0.25rem' : 0 }}>
+                                {na.actionDueDate && (
+                                  <span style={{ fontSize: '0.7rem', color: '#9b59b6', marginRight: '0.25rem' }}>
+                                    [{na.actionDueDate}]
+                                  </span>
+                                )}
+                                {truncated}
+                                {text.length > NA_TRUNCATE_LENGTH && (
+                                  <MoreLink onClick={(e) => { e.stopPropagation(); setNaModalText(text); }}>
+                                    続きを見る
+                                  </MoreLink>
+                                )}
+                              </div>
+                            );
+                          })}
                         </NaText>
-                      ) : '-'}
+                      )}
                     </TableCell>
                     <TableCell>
                       {displayPhase === 'フェーズ8' ? '-' : (

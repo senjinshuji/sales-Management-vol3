@@ -4,7 +4,7 @@ import { FiX, FiPlus, FiTrash2, FiEdit2, FiSend, FiChevronDown, FiChevronRight }
 import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { PROJECT_RANKS, STATUSES, STATUS_COLORS, CONTINUATION_STATUS_COLORS } from '../data/constants.js';
 import { db } from '../firebase.js';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, Timestamp } from 'firebase/firestore';
 import { fetchAllStaff } from '../services/staffService.js';
 import {
   updateProject,
@@ -958,9 +958,9 @@ const OperatorTab = ({ project, onProjectUpdate }) => {
 const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldChange, operators, salesReps, subCol = 'salesRecords', onPhase8Submitted }) => {
   const [entries, setEntries] = useState([]);
   const [memoContent, setMemoContent] = useState('');
-  const [actionContent, setActionContent] = useState('');
-  const [actionDueDate, setActionDueDate] = useState('');
-  const [actionAssignee, setActionAssignee] = useState('');
+  // NA複数対応: 配列で管理
+  const EMPTY_NA = { actionContent: '', actionDueDate: '', actionAssignee: '' };
+  const [naItems, setNaItems] = useState([{ ...EMPTY_NA }]);
   const [currentPhase, setCurrentPhase] = useState(record.phase || 'フェーズ1');
   const [isLoading, setIsLoading] = useState(false);
   const [proposalMenuList, setProposalMenuList] = useState([]);
@@ -1008,30 +1008,64 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
     }
   }, [entries]);
 
-  /** まとめて送信 */
+  /** NA行の値を更新するヘルパー */
+  const updateNaItem = (index, field, value) => {
+    setNaItems(prev => prev.map((item, i) => i === index ? { ...item, [field]: value } : item));
+  };
+
+  /** NA行を追加 */
+  const addNaRow = () => {
+    setNaItems(prev => [...prev, { ...EMPTY_NA }]);
+  };
+
+  /** NA行を削除 */
+  const removeNaRow = (index) => {
+    setNaItems(prev => prev.length <= 1 ? [{ ...EMPTY_NA }] : prev.filter((_, i) => i !== index));
+  };
+
+  /** まとめて送信（NA複数対応） */
   const handleSubmit = async () => {
     const hasMemo = memoContent.trim();
-    const hasAction = actionContent.trim();
-    if (!hasMemo && !hasAction) return;
+    // 入力済みNAを抽出
+    const filledNas = naItems.filter(na => na.actionContent.trim());
+    if (!hasMemo && filledNas.length === 0) return;
     try {
       const phaseChanged = currentPhase !== record.phase;
-      await addSalesEntry(projectId, record.id, {
-        memoContent: memoContent.trim() || '',
-        actionContent: actionContent.trim() || '',
-        actionDueDate: actionDueDate || '',
-        actionAssignee: actionAssignee || '',
-        phase: currentPhase,
-        phaseChange: phaseChanged ? `${record.phase}→${currentPhase}` : ''
-      }, subCol);
+      const phaseChange = phaseChanged ? `${record.phase}→${currentPhase}` : '';
+
+      if (filledNas.length <= 1) {
+        // NA 0〜1件: 従来通り1エントリ
+        const na = filledNas[0] || EMPTY_NA;
+        await addSalesEntry(projectId, record.id, {
+          memoContent: memoContent.trim() || '',
+          actionContent: na.actionContent.trim() || '',
+          actionDueDate: na.actionDueDate || '',
+          actionAssignee: na.actionAssignee || '',
+          phase: currentPhase,
+          phaseChange
+        }, subCol);
+      } else {
+        // NA 2件以上: 1件目にメモ付き、2件目以降はNA単体
+        for (let i = 0; i < filledNas.length; i++) {
+          const na = filledNas[i];
+          await addSalesEntry(projectId, record.id, {
+            memoContent: i === 0 ? (memoContent.trim() || '') : '',
+            actionContent: na.actionContent.trim(),
+            actionDueDate: na.actionDueDate || '',
+            actionAssignee: na.actionAssignee || '',
+            phase: currentPhase,
+            phaseChange: i === 0 ? phaseChange : ''
+          }, subCol);
+        }
+      }
+
       // フェーズが変更されていたら営業記録も更新
       if (phaseChanged) {
         await updateSalesRecord(projectId, record.id, { phase: currentPhase }, subCol);
         onPhaseUpdate(record.id, currentPhase);
       }
       setMemoContent('');
-      setActionContent('');
-      setActionDueDate('');
-      setActionAssignee('');
+      setNaItems([{ ...EMPTY_NA }]);
       await loadEntries();
 
       // フェーズ8に変更された場合、既存案件への移行を提案
@@ -1062,17 +1096,34 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
   const handleEditSave = async () => {
     if (!editingEntry) return;
     try {
+      // 既存エントリの更新
       const updateData = {
         memoContent: editingEntry.memoContent || '',
         actionContent: editingEntry.actionContent || '',
         actionDueDate: editingEntry.actionDueDate || '',
         actionAssignee: editingEntry.actionAssignee || ''
       };
+      // createdAtが編集されている場合、Firestore Timestampに変換して含める
+      if (editingEntry.createdAtEdited) {
+        updateData.createdAt = Timestamp.fromDate(new Date(editingEntry.createdAtEdited));
+      }
       await updateSalesEntry(projectId, record.id, editingEntry.id, updateData, subCol);
-      setEntries(prev => prev.map(e =>
-        e.id === editingEntry.id ? { ...e, ...updateData } : e
-      ));
+
+      // 追加NAを新規エントリとして保存
+      const extraFilled = (editingEntry.extraNaItems || []).filter(na => na.actionContent.trim());
+      for (const na of extraFilled) {
+        await addSalesEntry(projectId, record.id, {
+          memoContent: '',
+          actionContent: na.actionContent.trim(),
+          actionDueDate: na.actionDueDate || '',
+          actionAssignee: na.actionAssignee || '',
+          phase: editingEntry.phase || '',
+          phaseChange: ''
+        }, subCol);
+      }
+
       setEditingEntry(null);
+      await loadEntries();
     } catch (error) {
       console.error('Failed to update sales entry:', error);
     }
@@ -1088,10 +1139,11 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
     }
   };
 
-  // NA入力がある場合は日付・担当者も必須
-  const naFilled = actionContent.trim();
-  const naValid = !naFilled || (actionDueDate && actionAssignee);
-  const hasInput = (memoContent.trim() || naFilled) && naValid;
+  // NA入力がある場合は日付・担当者も必須（全行チェック）
+  const filledNas = naItems.filter(na => na.actionContent.trim());
+  const naAllValid = filledNas.every(na => na.actionDueDate && na.actionAssignee);
+  const hasAnyNa = filledNas.length > 0;
+  const hasInput = (memoContent.trim() || hasAnyNa) && (hasAnyNa ? naAllValid : true);
 
   return (
     <ExpandedContent colSpan={7}>
@@ -1177,36 +1229,63 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
         />
       </FormGroup>
 
-      {/* NA入力 */}
+      {/* NA入力（複数対応） */}
       <FormGroup style={{ marginBottom: '0.5rem' }}>
-        <Label>ネクストアクション</Label>
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
-          <DateInput
-            type="date"
-            value={actionDueDate}
-            onChange={e => setActionDueDate(e.target.value)}
-          />
-          <AssigneeSelect
-            value={actionAssignee}
-            onChange={e => setActionAssignee(e.target.value)}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+          <Label style={{ margin: 0 }}>ネクストアクション</Label>
+          <button
+            type="button"
+            onClick={addNaRow}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: '22px', height: '22px', border: '1px solid #3498db', borderRadius: '4px',
+              background: 'white', color: '#3498db', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600,
+              padding: 0
+            }}
+            title="NAを追加"
           >
-            <option value="">担当者</option>
-            {[...new Set([...(salesReps || []), ...(operators || [])])].map(rep => (
-              <option key={rep} value={rep}>{rep}</option>
-            ))}
-          </AssigneeSelect>
+            <FiPlus size={12} />
+          </button>
         </div>
-        <ActionInput
-          placeholder="ネクストアクションを入力..."
-          value={actionContent}
-          onChange={e => setActionContent(e.target.value)}
-          onInput={autoResize}
-          rows={2}
-        />
+        {naItems.map((na, idx) => (
+          <div key={idx} style={{ marginBottom: idx < naItems.length - 1 ? '0.5rem' : 0, padding: naItems.length > 1 ? '0.5rem' : 0, border: naItems.length > 1 ? '1px solid #e0e0e0' : 'none', borderRadius: '6px', background: naItems.length > 1 ? '#fafbfc' : 'transparent' }}>
+            {naItems.length > 1 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                <span style={{ fontSize: '0.7rem', color: '#7f8c8d', fontWeight: 600 }}>NA {idx + 1}</span>
+                <DeleteButton onClick={() => removeNaRow(idx)} style={{ padding: '0.1rem' }}>
+                  <FiTrash2 size={12} />
+                </DeleteButton>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <DateInput
+                type="date"
+                value={na.actionDueDate}
+                onChange={e => updateNaItem(idx, 'actionDueDate', e.target.value)}
+              />
+              <AssigneeSelect
+                value={na.actionAssignee}
+                onChange={e => updateNaItem(idx, 'actionAssignee', e.target.value)}
+              >
+                <option value="">担当者</option>
+                {[...new Set([...(salesReps || []), ...(operators || [])])].map(rep => (
+                  <option key={rep} value={rep}>{rep}</option>
+                ))}
+              </AssigneeSelect>
+            </div>
+            <ActionInput
+              placeholder="ネクストアクションを入力..."
+              value={na.actionContent}
+              onChange={e => updateNaItem(idx, 'actionContent', e.target.value)}
+              onInput={autoResize}
+              rows={2}
+            />
+          </div>
+        ))}
       </FormGroup>
 
       {/* バリデーションメッセージ */}
-      {naFilled && !naValid && (
+      {hasAnyNa && !naAllValid && (
         <div style={{ fontSize: '0.8rem', color: '#e74c3c', marginBottom: '0.5rem' }}>
           ※ ネクストアクション入力時は日付と担当者が必須です
         </div>
@@ -1264,6 +1343,75 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
                       placeholder="担当者"
                     />
                   </div>
+                </SubSection>
+                {/* 追加NA行 */}
+                {(editingEntry.extraNaItems || []).map((na, idx) => (
+                  <SubSection key={idx} style={{ marginBottom: '0.75rem', padding: '0.5rem', border: '1px solid #e0e0e0', borderRadius: '6px', background: '#fafbfc' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                      <SubSectionTitle style={{ margin: 0 }}>追加NA {idx + 1}</SubSectionTitle>
+                      <DeleteButton onClick={() => setEditingEntry(prev => ({
+                        ...prev,
+                        extraNaItems: prev.extraNaItems.filter((_, i) => i !== idx)
+                      }))} style={{ padding: '0.1rem' }}>
+                        <FiTrash2 size={12} />
+                      </DeleteButton>
+                    </div>
+                    <EntryEditTextarea
+                      value={na.actionContent}
+                      onChange={e => setEditingEntry(prev => ({
+                        ...prev,
+                        extraNaItems: prev.extraNaItems.map((item, i) => i === idx ? { ...item, actionContent: e.target.value } : item)
+                      }))}
+                      rows={2}
+                      placeholder="ネクストアクションを入力..."
+                    />
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
+                      <EntryEditInput
+                        type="date"
+                        value={na.actionDueDate}
+                        onChange={e => setEditingEntry(prev => ({
+                          ...prev,
+                          extraNaItems: prev.extraNaItems.map((item, i) => i === idx ? { ...item, actionDueDate: e.target.value } : item)
+                        }))}
+                      />
+                      <EntryEditInput
+                        type="text"
+                        value={na.actionAssignee}
+                        onChange={e => setEditingEntry(prev => ({
+                          ...prev,
+                          extraNaItems: prev.extraNaItems.map((item, i) => i === idx ? { ...item, actionAssignee: e.target.value } : item)
+                        }))}
+                        placeholder="担当者"
+                      />
+                    </div>
+                  </SubSection>
+                ))}
+                {/* NA追加ボタン */}
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => setEditingEntry(prev => ({
+                      ...prev,
+                      extraNaItems: [...(prev.extraNaItems || []), { actionContent: '', actionDueDate: '', actionAssignee: '' }]
+                    }))}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                      padding: '0.25rem 0.6rem', border: '1px solid #3498db', borderRadius: '4px',
+                      background: 'white', color: '#3498db', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600
+                    }}
+                    title="NAを追加"
+                  >
+                    <FiPlus size={12} /> NA追加
+                  </button>
+                </div>
+                <SubSection style={{ marginBottom: '0.75rem' }}>
+                  <SubSectionTitle style={{ margin: '0 0 0.25rem' }}>送信日時</SubSectionTitle>
+                  <EntryEditInput
+                    type="datetime-local"
+                    value={editingEntry.createdAtEdited || ''}
+                    onChange={e => setEditingEntry(prev => ({ ...prev, createdAtEdited: e.target.value }))}
+                    style={{ flex: 'none', width: 'auto' }}
+                  />
                 </SubSection>
                 <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
                   <SmallButton onClick={() => setEditingEntry(null)}>取消</SmallButton>
@@ -1331,7 +1479,12 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
 
                 <ActionMeta style={{ marginTop: '0.5rem' }}>{formatTimestamp(entry.createdAt)}</ActionMeta>
                 <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end', marginTop: '0.25rem' }}>
-                  <EditButton onClick={() => setEditingEntry({ ...entry })}>
+                  <EditButton onClick={() => {
+                    // createdAtをdatetime-local用のISO文字列に変換
+                    const date = entry.createdAt?.toDate ? entry.createdAt.toDate() : (entry.createdAt ? new Date(entry.createdAt) : new Date());
+                    const isoLocal = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                    setEditingEntry({ ...entry, createdAtEdited: isoLocal, extraNaItems: [] });
+                  }}>
                     <FiEdit2 size={14} />
                   </EditButton>
                   <DeleteButton onClick={() => handleDelete(entry.id)}>
