@@ -264,6 +264,7 @@ const TableCell = styled.td`
   font-size: 0.85rem;
   color: #2c3e50;
   vertical-align: middle;
+  white-space: nowrap;
 `;
 
 const NaText = styled.div`
@@ -748,7 +749,10 @@ function ProgressDashboard() {
 
       const isValidProposalMenu = isPartnerView || (deal.proposalMenu !== '他社案件');
 
-      return matchesSearch && matchesStatus && matchesRepresentative && matchesIntroducer && matchesPartnerCompany && isValidProposalMenu;
+      // 既存案件（isExistingProject: true）は新規一覧から除外
+      const isNewCase = !deal.isExistingProject;
+
+      return matchesSearch && matchesStatus && matchesRepresentative && matchesIntroducer && matchesPartnerCompany && isValidProposalMenu && isNewCase;
     });
 
     // ソート
