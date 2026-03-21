@@ -380,6 +380,16 @@ export const fetchOperationMemos = async (projectId) => {
  * @param {string} projectId - 案件ID
  * @param {string} memoId - メモID
  */
+export const updateOperationMemo = async (projectId, memoId, updateData) => {
+  try {
+    const memoRef = doc(db, 'progressDashboard', projectId, 'operationMemos', memoId);
+    await updateDoc(memoRef, updateData);
+  } catch (error) {
+    console.error('Failed to update operation memo:', error);
+    throw error;
+  }
+};
+
 export const deleteOperationMemo = async (projectId, memoId) => {
   try {
     const memoRef = doc(db, 'progressDashboard', projectId, 'operationMemos', memoId);

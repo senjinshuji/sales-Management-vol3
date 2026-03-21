@@ -11,7 +11,7 @@ import {
   fetchMonthlyData, saveMonthlyData,
   addSalesRecord, fetchSalesRecords, updateSalesRecord, deleteSalesRecord,
   addKeyPerson, fetchKeyPersons, updateKeyPerson, deleteKeyPerson,
-  addOperationMemo, fetchOperationMemos, deleteOperationMemo,
+  addOperationMemo, fetchOperationMemos, updateOperationMemo, deleteOperationMemo,
   addSalesEntry, fetchSalesEntries, deleteSalesEntry, updateSalesEntry, updateSalesEntryStatus
 } from '../services/projectService.js';
 
@@ -333,7 +333,7 @@ const EditButton = styled.button`
   &:hover { opacity: 1; }
 `;
 
-const EntryEditTextarea = styled.textarea`
+const EntryEditTextareaBase = styled.textarea`
   width: 100%;
   padding: 0.5rem;
   border: 1px solid #ddd;
@@ -341,8 +341,26 @@ const EntryEditTextarea = styled.textarea`
   font-size: 0.85rem;
   box-sizing: border-box;
   resize: vertical;
+  overflow: hidden;
   &:focus { outline: none; border-color: #3498db; }
 `;
+
+/** 内容に応じて自動リサイズするテキストエリア */
+const EntryEditTextarea = React.forwardRef((props, ref) => (
+  <EntryEditTextareaBase
+    {...props}
+    rows={1}
+    ref={el => {
+      if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
+      if (typeof ref === 'function') ref(el);
+      else if (ref) ref.current = el;
+    }}
+    onInput={e => {
+      autoResize(e);
+      if (props.onInput) props.onInput(e);
+    }}
+  />
+));
 
 const EntryEditInput = styled.input`
   padding: 0.4rem;
@@ -632,6 +650,7 @@ const OperationMemoSection = ({ projectId }) => {
   const [memos, setMemos] = useState([]);
   const [content, setContent] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [editingMemo, setEditingMemo] = useState(null);
 
   const loadMemos = useCallback(async () => {
     if (!projectId) return;
@@ -658,6 +677,17 @@ const OperationMemoSection = ({ projectId }) => {
       await loadMemos();
     } catch (error) {
       console.error('Failed to add operation memo:', error);
+    }
+  };
+
+  const handleEditSave = async () => {
+    if (!editingMemo || !editingMemo.content.trim()) return;
+    try {
+      await updateOperationMemo(projectId, editingMemo.id, { content: editingMemo.content.trim() });
+      setEditingMemo(null);
+      await loadMemos();
+    } catch (error) {
+      console.error('Failed to update operation memo:', error);
     }
   };
 
@@ -692,12 +722,31 @@ const OperationMemoSection = ({ projectId }) => {
       ) : (
         memos.map(memo => (
           <ActionCard key={memo.id}>
-            <ActionContent>{memo.content}</ActionContent>
-            <ActionMeta>{formatTimestamp(memo.createdAt)}</ActionMeta>
-            {memo.id === memos[memos.length - 1]?.id && (
-              <DeleteButton onClick={() => handleDeleteMemo(memo.id)}>
-                <FiTrash2 size={14} />
-              </DeleteButton>
+            {editingMemo && editingMemo.id === memo.id ? (
+              <>
+                <EntryEditTextarea
+                  value={editingMemo.content}
+                  onChange={e => setEditingMemo(prev => ({ ...prev, content: e.target.value }))}
+                  placeholder="運用メモを入力..."
+                />
+                <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                  <SmallButton onClick={() => setEditingMemo(null)}>取消</SmallButton>
+                  <SmallButton $primary onClick={handleEditSave}>保存</SmallButton>
+                </div>
+              </>
+            ) : (
+              <>
+                <ActionContent>{memo.content}</ActionContent>
+                <ActionMeta>{formatTimestamp(memo.createdAt)}</ActionMeta>
+                <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end', marginTop: '0.25rem' }}>
+                  <EditButton onClick={() => setEditingMemo({ id: memo.id, content: memo.content })}>
+                    <FiEdit2 size={14} />
+                  </EditButton>
+                  <DeleteButton onClick={() => handleDeleteMemo(memo.id)}>
+                    <FiTrash2 size={14} />
+                  </DeleteButton>
+                </div>
+              </>
             )}
           </ActionCard>
         ))
@@ -1417,7 +1466,6 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
                           ...prev,
                           entries: prev.entries.map((en, i) => i === 0 ? { ...en, memoContent: e.target.value } : en)
                         }))}
-                        rows={3}
                         placeholder="接触メモを入力..."
                       />
                     </SubSection>
@@ -1440,7 +1488,6 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
                             ...prev,
                             entries: prev.entries.map((item, i) => i === idx ? { ...item, actionContent: e.target.value } : item)
                           }))}
-                          rows={2}
                           placeholder="ネクストアクションを入力..."
                         />
                         <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
@@ -1485,7 +1532,6 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
                             ...prev,
                             extraNaItems: prev.extraNaItems.map((item, i) => i === idx ? { ...item, actionContent: e.target.value } : item)
                           }))}
-                          rows={2}
                           placeholder="ネクストアクションを入力..."
                         />
                         <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
@@ -1633,7 +1679,6 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
                     <EntryEditTextarea
                       value={editingEntry.memoContent || ''}
                       onChange={e => setEditingEntry(prev => ({ ...prev, memoContent: e.target.value }))}
-                      rows={3}
                       placeholder="接触メモを入力..."
                     />
                   </SubSection>
@@ -1642,7 +1687,6 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
                     <EntryEditTextarea
                       value={editingEntry.actionContent || ''}
                       onChange={e => setEditingEntry(prev => ({ ...prev, actionContent: e.target.value }))}
-                      rows={2}
                       placeholder="ネクストアクションを入力..."
                     />
                     <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
@@ -1680,7 +1724,6 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
                           ...prev,
                           extraNaItems: prev.extraNaItems.map((item, i) => i === idx ? { ...item, actionContent: e.target.value } : item)
                         }))}
-                        rows={2}
                         placeholder="ネクストアクションを入力..."
                       />
                       <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
