@@ -479,12 +479,9 @@ const ProjectManagementPage = () => {
       const { records, latestEntry, activeNaEntries = [] } = salesData;
       const latestRecord = records.length > 0 ? records[0] : null;
 
-      // 複数NAの中で最も近い期日を取得
+      // 最新NAの期日を取得
       const closestDueDate = activeNaEntries.length > 0
-        ? activeNaEntries
-            .map(e => e.actionDueDate)
-            .filter(Boolean)
-            .sort()[0] || ''
+        ? activeNaEntries[0].actionDueDate || ''
         : '';
 
       return {
@@ -764,31 +761,30 @@ const ProjectManagementPage = () => {
                     ) : '-'}
                   </TableCell>
                   <TableCell>
-                    {(p.activeNaEntries || []).length === 0 ? '-' : (
-                      <NaText>
-                        {(p.activeNaEntries || []).map((na, idx) => {
-                          const text = na.actionContent || '';
-                          const truncated = text.length > NA_TRUNCATE_LENGTH
-                            ? text.slice(0, NA_TRUNCATE_LENGTH) + '...'
-                            : text;
-                          return (
-                            <div key={na.id || idx} style={{ marginBottom: idx < p.activeNaEntries.length - 1 ? '0.25rem' : 0 }}>
-                              {na.actionDueDate && (
-                                <span style={{ fontSize: '0.7rem', color: '#9b59b6', marginRight: '0.25rem' }}>
-                                  [{na.actionDueDate}]
-                                </span>
-                              )}
-                              {truncated}
-                              {text.length > NA_TRUNCATE_LENGTH && (
-                                <MoreLink onClick={(e) => { e.stopPropagation(); setNaModalText(text); }}>
-                                  続きを見る
-                                </MoreLink>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </NaText>
-                    )}
+                    {!(p.activeNaEntries || []).length ? '-' : (() => {
+                      const na = p.activeNaEntries[0];
+                      const text = na.actionContent || '';
+                      const truncated = text.length > NA_TRUNCATE_LENGTH
+                        ? text.slice(0, NA_TRUNCATE_LENGTH) + '...'
+                        : text;
+                      return (
+                        <NaText>
+                          <div>
+                            {na.actionDueDate && (
+                              <span style={{ fontSize: '0.7rem', color: '#9b59b6', marginRight: '0.25rem' }}>
+                                [{na.actionDueDate}]
+                              </span>
+                            )}
+                            {truncated}
+                            {text.length > NA_TRUNCATE_LENGTH && (
+                              <MoreLink onClick={(e) => { e.stopPropagation(); setNaModalText(text); }}>
+                                続きを見る
+                              </MoreLink>
+                            )}
+                          </div>
+                        </NaText>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell>
                     {p.latestNaDueDate || '-'}

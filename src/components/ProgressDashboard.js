@@ -1257,11 +1257,7 @@ function ProgressDashboard() {
                 const activeNaEntries = salesInfo.activeNaEntries || [];
                 const displayPhase = salesInfo.latestPhase || deal.status || '';
                 const latestNaContent = naEntry?.actionContent || '';
-                // 複数NAの中で最も近い期日を表示
-                const closestDueDate = activeNaEntries.length > 0
-                  ? activeNaEntries.map(e => e.actionDueDate).filter(Boolean).sort()[0] || ''
-                  : '';
-                const latestNaDueDate = closestDueDate || naEntry?.actionDueDate || '';
+                const latestNaDueDate = naEntry?.actionDueDate || '';
                 return (
                   <TableRow
                     key={deal.id}
@@ -1299,18 +1295,18 @@ function ProgressDashboard() {
                     <TableCell>
                       {displayPhase === 'フェーズ8' ? (
                         <span style={{ color: '#999' }}>-</span>
-                      ) : activeNaEntries.length === 0 ? '-' : (
+                      ) : !naEntry ? '-' : (
                         <NaText>
-                          {activeNaEntries.map((na, idx) => {
-                            const text = na.actionContent || '';
+                          {(() => {
+                            const text = naEntry.actionContent || '';
                             const truncated = text.length > NA_TRUNCATE_LENGTH
                               ? text.slice(0, NA_TRUNCATE_LENGTH) + '...'
                               : text;
                             return (
-                              <div key={na.id || idx} style={{ marginBottom: idx < activeNaEntries.length - 1 ? '0.25rem' : 0 }}>
-                                {na.actionDueDate && (
+                              <div>
+                                {naEntry.actionDueDate && (
                                   <span style={{ fontSize: '0.7rem', color: '#9b59b6', marginRight: '0.25rem' }}>
-                                    [{na.actionDueDate}]
+                                    [{naEntry.actionDueDate}]
                                   </span>
                                 )}
                                 {truncated}
@@ -1321,7 +1317,7 @@ function ProgressDashboard() {
                                 )}
                               </div>
                             );
-                          })}
+                          })()}
                         </NaText>
                       )}
                     </TableCell>
