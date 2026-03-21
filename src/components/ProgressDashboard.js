@@ -1014,19 +1014,36 @@ function ProgressDashboard() {
     try {
       setIsSavingOrder(true);
 
-      // 受注情報をドキュメントに保存
+      // 新規側のレコードはフェーズ8に更新するが、isExistingProjectはfalseのまま残す
       const dealRef = doc(db, 'progressDashboard', selectedDeal.id);
       await updateDoc(dealRef, {
         status: 'フェーズ8',
-        isExistingProject: true,
         confirmedDate: new Date().toISOString().split('T')[0],
         receivedOrderMonth: orderData.receivedOrderMonth,
         receivedOrderAmount: orderData.receivedOrderAmount,
         updatedAt: serverTimestamp()
       });
 
-      // 営業レコードを作成（既存案件側のsalesRecordsにも追加）
-      await addSalesRecord(selectedDeal.id, {
+      // 既存側に別レコードを作成
+      const existingRef = await addDoc(collection(db, 'progressDashboard'), {
+        companyName: selectedDeal.companyName,
+        introducer: selectedDeal.introducer || '',
+        productName: selectedDeal.productName,
+        leadSource: selectedDeal.leadSource || '',
+        representative: selectedDeal.representative || '',
+        status: 'フェーズ8',
+        expectedBudget: orderData.receivedOrderAmount,
+        rank: selectedDeal.rank || '',
+        isExistingProject: true,
+        confirmedDate: new Date().toISOString().split('T')[0],
+        receivedOrderMonth: orderData.receivedOrderMonth,
+        receivedOrderAmount: orderData.receivedOrderAmount,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      // 既存側のレコードに営業記録を追加
+      await addSalesRecord(existingRef.id, {
         phase: 'フェーズ8',
         budget: orderData.receivedOrderAmount,
         date: new Date().toISOString().split('T')[0],
