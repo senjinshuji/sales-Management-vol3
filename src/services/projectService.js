@@ -19,6 +19,23 @@ import {
  */
 
 /**
+ * 案件を1件取得する
+ * @param {string} projectId - 案件ID
+ * @returns {Promise<object|null>} 案件データ
+ */
+export const fetchProjectById = async (projectId) => {
+  try {
+    const projectRef = doc(db, 'progressDashboard', projectId);
+    const snapshot = await getDoc(projectRef);
+    if (!snapshot.exists()) return null;
+    return { id: snapshot.id, ...snapshot.data() };
+  } catch (error) {
+    console.error('Failed to fetch project by id:', error);
+    throw error;
+  }
+};
+
+/**
  * 案件を全件取得する（progressDashboardのフェーズ8 = 受注案件）
  * @returns {Promise<Array<{id: string, data: object}>>} 案件一覧
  */
@@ -624,6 +641,101 @@ export const updateSalesEntryStatus = async (projectId, recordId, entryId, statu
  * 全プロジェクトのNA付きエントリを一括取得する
  * @returns {Promise<Array>} NA一覧（projectId, recordId, entryデータ, 案件情報付き）
  */
+// ============================================
+// NAコメント（看板ボード用）
+// ============================================
+
+/**
+ * NAエントリにコメントを追加する
+ * @param {string} projectId - 案件ID
+ * @param {string} recordId - 営業記録ID
+ * @param {string} entryId - エントリID
+ * @param {object} commentData - { content, author }
+ * @param {string} subCol - サブコレクション名
+ */
+export const addNaComment = async (projectId, recordId, entryId, commentData, subCol = 'salesRecords') => {
+  try {
+    const commentsRef = collection(
+      db, 'progressDashboard', projectId, subCol, recordId, 'entries', entryId, 'comments'
+    );
+    await addDoc(commentsRef, {
+      ...commentData,
+      createdAt: serverTimestamp()
+    });
+  } catch (error) {
+    console.error('Failed to add NA comment:', error);
+    throw error;
+  }
+};
+
+/**
+ * NAエントリのコメントを全件取得する（作成日時昇順）
+ * @param {string} projectId - 案件ID
+ * @param {string} recordId - 営業記録ID
+ * @param {string} entryId - エントリID
+ * @param {string} subCol - サブコレクション名
+ * @returns {Promise<Array>} コメント一覧
+ */
+export const fetchNaComments = async (projectId, recordId, entryId, subCol = 'salesRecords') => {
+  try {
+    const commentsRef = collection(
+      db, 'progressDashboard', projectId, subCol, recordId, 'entries', entryId, 'comments'
+    );
+    const snapshot = await getDocs(commentsRef);
+    return snapshot.docs
+      .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+      .sort((a, b) => {
+        const aTime = a.createdAt?.toMillis?.() || 0;
+        const bTime = b.createdAt?.toMillis?.() || 0;
+        return aTime - bTime;
+      });
+  } catch (error) {
+    console.error('Failed to fetch NA comments:', error);
+    throw error;
+  }
+};
+
+/**
+ * NAコメントを更新する
+ * @param {string} projectId - 案件ID
+ * @param {string} recordId - 営業記録ID
+ * @param {string} entryId - エントリID
+ * @param {string} commentId - コメントID
+ * @param {object} data - 更新データ
+ * @param {string} subCol - サブコレクション名
+ */
+export const updateNaComment = async (projectId, recordId, entryId, commentId, data, subCol = 'salesRecords') => {
+  try {
+    const commentRef = doc(
+      db, 'progressDashboard', projectId, subCol, recordId, 'entries', entryId, 'comments', commentId
+    );
+    await updateDoc(commentRef, data);
+  } catch (error) {
+    console.error('Failed to update NA comment:', error);
+    throw error;
+  }
+};
+
+/**
+ * NAコメントを削除する
+ * @param {string} projectId - 案件ID
+ * @param {string} recordId - 営業記録ID
+ * @param {string} entryId - エントリID
+ * @param {string} commentId - コメントID
+ * @param {string} subCol - サブコレクション名
+ */
+export const deleteNaComment = async (projectId, recordId, entryId, commentId, subCol = 'salesRecords') => {
+  try {
+    const commentRef = doc(
+      db, 'progressDashboard', projectId, subCol, recordId, 'entries', entryId, 'comments', commentId
+    );
+    await deleteDoc(commentRef);
+  } catch (error) {
+    console.error('Failed to delete NA comment:', error);
+    throw error;
+  }
+};
+
 export const fetchAllNextActions = async () => {
   try {
     // 全案件を取得（フェーズ制限なし）

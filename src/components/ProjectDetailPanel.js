@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled, { keyframes } from 'styled-components';
-import { FiX, FiPlus, FiTrash2, FiEdit2, FiSend, FiChevronDown, FiChevronRight } from 'react-icons/fi';
+import { FiX, FiPlus, FiTrash2, FiEdit2, FiSend, FiChevronDown, FiChevronRight, FiExternalLink, FiCheck } from 'react-icons/fi';
 import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { PROJECT_RANKS, STATUSES, STATUS_COLORS, CONTINUATION_STATUS_COLORS } from '../data/constants.js';
 import { db } from '../firebase.js';
@@ -12,7 +12,8 @@ import {
   addSalesRecord, fetchSalesRecords, updateSalesRecord, deleteSalesRecord,
   addKeyPerson, fetchKeyPersons, updateKeyPerson, deleteKeyPerson,
   addOperationMemo, fetchOperationMemos, updateOperationMemo, deleteOperationMemo,
-  addSalesEntry, fetchSalesEntries, deleteSalesEntry, updateSalesEntry, updateSalesEntryStatus
+  addSalesEntry, fetchSalesEntries, deleteSalesEntry, updateSalesEntry, updateSalesEntryStatus,
+  addNaComment, fetchNaComments, updateNaComment, deleteNaComment
 } from '../services/projectService.js';
 
 // ============================================
@@ -709,6 +710,7 @@ const OperationMemoSection = ({ projectId }) => {
           value={content}
           onChange={e => setContent(e.target.value)}
           onInput={autoResize}
+          onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && content.trim()) { e.preventDefault(); handleAddMemo(); } }}
           rows={1}
         />
         <SendButton onClick={handleAddMemo} disabled={!content.trim()}>
@@ -1006,6 +1008,13 @@ const OperatorTab = ({ project, onProjectUpdate }) => {
 
 const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldChange, operators, salesReps, subCol = 'salesRecords', onPhase8Submitted }) => {
   const [entries, setEntries] = useState([]);
+  // NA詳細パネル（2層目スライドイン）
+  const [naDetailEntry, setNaDetailEntry] = useState(null);
+  const [naComments, setNaComments] = useState([]);
+  const [naCommentText, setNaCommentText] = useState('');
+  const [naEditingCommentId, setNaEditingCommentId] = useState(null);
+  const [naEditCommentText, setNaEditCommentText] = useState('');
+  const CURRENT_USER = 'system';
   const [memoContent, setMemoContent] = useState('');
   // NA複数対応: 配列で管理
   const EMPTY_NA = { actionContent: '', actionDueDate: '', actionAssignee: '' };
@@ -1128,7 +1137,17 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
     }
   };
 
-  /** NAステータス切替 */
+  /** NAステータスの色とラベルを返す */
+  const getNaStatusStyle = (status) => {
+    switch (status) {
+      case 'done':      return { bg: '#95a5a6', label: 'Done' };
+      case 'mustToday': return { bg: '#e74c3c', label: '本日必達' };
+      case 'reviewing': return { bg: '#f39c12', label: 'レビュー待ち' };
+      default:          return { bg: '#8b0000', label: 'todo' };
+    }
+  };
+
+  /** NAステータス切替（active⇔done、他ステータスからはdoneへ） */
   const handleToggleNaStatus = async (entryId, currentStatus) => {
     const newStatus = currentStatus === 'done' ? 'active' : 'done';
     try {
@@ -1283,6 +1302,74 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
 
   const groupedEntries = groupEntries(entries);
 
+  // --- NA詳細パネル関連 ---
+
+  const openNaDetail = async (entry) => {
+    setNaDetailEntry(entry);
+    setNaCommentText('');
+    setNaEditingCommentId(null);
+    try {
+      const data = await fetchNaComments(projectId, record.id, entry.id, subCol);
+      setNaComments(data);
+    } catch (error) {
+      console.error('Failed to load NA comments:', error);
+      setNaComments([]);
+    }
+  };
+
+  const closeNaDetail = () => {
+    setNaDetailEntry(null);
+    setNaComments([]);
+    setNaCommentText('');
+    setNaEditingCommentId(null);
+  };
+
+  const handleNaAddComment = async () => {
+    if (!naCommentText.trim() || !naDetailEntry) return;
+    try {
+      await addNaComment(projectId, record.id, naDetailEntry.id, {
+        content: naCommentText.trim(), author: CURRENT_USER
+      }, subCol);
+      setNaCommentText('');
+      const data = await fetchNaComments(projectId, record.id, naDetailEntry.id, subCol);
+      setNaComments(data);
+    } catch (error) {
+      console.error('Failed to add NA comment:', error);
+    }
+  };
+
+  const handleNaUpdateComment = async (commentId) => {
+    if (!naEditCommentText.trim() || !naDetailEntry) return;
+    try {
+      await updateNaComment(projectId, record.id, naDetailEntry.id, commentId, {
+        content: naEditCommentText.trim()
+      }, subCol);
+      setNaEditingCommentId(null);
+      const data = await fetchNaComments(projectId, record.id, naDetailEntry.id, subCol);
+      setNaComments(data);
+    } catch (error) {
+      console.error('Failed to update NA comment:', error);
+    }
+  };
+
+  const handleNaDeleteComment = async (commentId) => {
+    if (!naDetailEntry) return;
+    try {
+      await deleteNaComment(projectId, record.id, naDetailEntry.id, commentId, subCol);
+      const data = await fetchNaComments(projectId, record.id, naDetailEntry.id, subCol);
+      setNaComments(data);
+    } catch (error) {
+      console.error('Failed to delete NA comment:', error);
+    }
+  };
+
+  /** NA詳細パネルのタイムスタンプフォーマット */
+  const fmtNaTs = (ts) => {
+    if (!ts) return '';
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  };
+
   return (
     <ExpandedContent colSpan={7}>
       {/* 開始日・終了日 */}
@@ -1363,6 +1450,7 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
           value={memoContent}
           onChange={e => setMemoContent(e.target.value)}
           onInput={autoResize}
+          onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); handleSubmit(); } }}
           rows={2}
         />
       </FormGroup>
@@ -1416,6 +1504,7 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
               value={na.actionContent}
               onChange={e => updateNaItem(idx, 'actionContent', e.target.value)}
               onInput={autoResize}
+              onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); handleSubmit(); } }}
               rows={2}
             />
           </div>
@@ -1624,11 +1713,29 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
                               fontSize: '0.7rem',
                               fontWeight: 600,
                               color: 'white',
-                              background: entry.actionStatus === 'done' ? '#95a5a6' : '#8b0000',
+                              background: getNaStatusStyle(entry.actionStatus || 'active').bg,
                               marginLeft: 'auto'
                             }}
                           >
-                            {entry.actionStatus === 'done' ? 'Done' : 'todo'}
+                            {getNaStatusStyle(entry.actionStatus || 'active').label}
+                          </span>
+                          <span
+                            onClick={(e) => { e.stopPropagation(); openNaDetail(entry); }}
+                            style={{
+                              cursor: 'pointer',
+                              padding: '0.1rem 0.4rem',
+                              borderRadius: '4px',
+                              fontSize: '0.7rem',
+                              fontWeight: 500,
+                              color: '#3498db',
+                              border: '1px solid #3498db',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.2rem'
+                            }}
+                            title="NA管理ボードを開く"
+                          >
+                            <FiExternalLink size={10} /> NA管理
                           </span>
                         </SubSectionTitle>
                         <ActionContent style={{
@@ -1825,11 +1932,29 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
                             fontSize: '0.7rem',
                             fontWeight: 600,
                             color: 'white',
-                            background: entry.actionStatus === 'done' ? '#95a5a6' : '#8b0000',
+                            background: getNaStatusStyle(entry.actionStatus || 'active').bg,
                             marginLeft: 'auto'
                           }}
                         >
-                          {entry.actionStatus === 'done' ? 'Done' : 'todo'}
+                          {getNaStatusStyle(entry.actionStatus || 'active').label}
+                        </span>
+                        <span
+                          onClick={(e) => { e.stopPropagation(); openNaDetail(entry); }}
+                          style={{
+                            cursor: 'pointer',
+                            padding: '0.1rem 0.4rem',
+                            borderRadius: '4px',
+                            fontSize: '0.7rem',
+                            fontWeight: 500,
+                            color: '#3498db',
+                            border: '1px solid #3498db',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.2rem'
+                          }}
+                          title="NA管理ボードを開く"
+                        >
+                          <FiExternalLink size={10} /> NA管理
                         </span>
                       </SubSectionTitle>
                       <ActionContent style={{
@@ -1859,6 +1984,136 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
             </ActionCard>
           );
         })
+      )}
+      {/* NA詳細パネル（2層目：営業メモパネルの上に重ねる） */}
+      {naDetailEntry && (
+        <>
+          <div
+            style={{
+              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+              background: 'rgba(0,0,0,0.15)', zIndex: 2000
+            }}
+            onClick={closeNaDetail}
+          />
+          <div style={{
+            position: 'fixed', top: 0, right: '3rem',
+            width: '38%', minWidth: '360px', height: '100vh',
+            background: '#fff',
+            boxShadow: '-4px 0 12px rgba(0,0,0,0.15)',
+            zIndex: 2001,
+            display: 'flex', flexDirection: 'column',
+            animation: 'naSlideIn 0.3s ease'
+          }} onClick={e => e.stopPropagation()}>
+            <style>{`@keyframes naSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }`}</style>
+            {/* ヘッダー */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.25rem', borderBottom: '1px solid #eee' }}>
+              <span style={{ fontSize: '1rem', fontWeight: 600, color: '#2c3e50' }}>NA詳細</span>
+              <button onClick={closeNaDetail} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#7f8c8d', width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <FiX size={18} />
+              </button>
+            </div>
+            {/* ボディ */}
+            <div style={{ flex: 1, padding: '1.25rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {/* NA内容 */}
+              <div>
+                <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#95a5a6', textTransform: 'uppercase' }}>NA内容</span>
+                <div style={{ fontSize: '0.9rem', color: '#2c3e50', whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginTop: '0.2rem' }}>
+                  {naDetailEntry.actionContent}
+                </div>
+              </div>
+              {/* 期日 */}
+              <div>
+                <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#95a5a6', textTransform: 'uppercase' }}>期日</span>
+                <div style={{ fontSize: '0.9rem', color: '#2c3e50', marginTop: '0.2rem' }}>
+                  {naDetailEntry.actionDueDate || '未設定'}
+                </div>
+              </div>
+              {/* 担当者 */}
+              {naDetailEntry.actionAssignee && (
+                <div>
+                  <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#95a5a6', textTransform: 'uppercase' }}>担当者</span>
+                  <div style={{ fontSize: '0.9rem', color: '#2c3e50', marginTop: '0.2rem' }}>{naDetailEntry.actionAssignee}</div>
+                </div>
+              )}
+              {/* ステータス */}
+              <div>
+                <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#95a5a6', textTransform: 'uppercase' }}>ステータス</span>
+                <div style={{ marginTop: '0.2rem' }}>
+                  <span style={{
+                    display: 'inline-block', padding: '0.2rem 0.6rem', borderRadius: '12px',
+                    fontSize: '0.75rem', fontWeight: 600, color: 'white',
+                    background: naDetailEntry.actionStatus === 'done' ? '#95a5a6' : '#3498db'
+                  }}>
+                    {naDetailEntry.actionStatus === 'done' ? 'done' : naDetailEntry.actionStatus === 'mustToday' ? '本日必達' : naDetailEntry.actionStatus === 'reviewing' ? 'レビュー待ち' : 'todo'}
+                  </span>
+                </div>
+              </div>
+
+              {/* コメント欄 */}
+              <div style={{ borderTop: '1px solid #eee', paddingTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#95a5a6', textTransform: 'uppercase' }}>メモ / コメント</span>
+
+                {naComments.map(c => (
+                  <div key={c.id} style={{ padding: '0.5rem 0.6rem', background: '#f9f9f9', borderRadius: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.7rem', color: '#95a5a6' }}>
+                      <span>{c.author || 'system'} — {fmtNaTs(c.createdAt)}</span>
+                      {c.author === CURRENT_USER && (
+                        <div style={{ display: 'flex', gap: '0.25rem' }}>
+                          <button onClick={() => { setNaEditingCommentId(c.id); setNaEditCommentText(c.content); }} style={{ border: 'none', background: 'transparent', color: '#bdc3c7', cursor: 'pointer', padding: '0.1rem' }}><FiEdit2 size={11} /></button>
+                          <button onClick={() => handleNaDeleteComment(c.id)} style={{ border: 'none', background: 'transparent', color: '#bdc3c7', cursor: 'pointer', padding: '0.1rem' }}><FiTrash2 size={11} /></button>
+                        </div>
+                      )}
+                    </div>
+                    {naEditingCommentId === c.id ? (
+                      <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center', marginTop: '0.25rem' }}>
+                        <textarea
+                          value={naEditCommentText}
+                          onChange={e => setNaEditCommentText(e.target.value)}
+                          onInput={autoResize}
+                          style={{ flex: 1, padding: '0.4rem', border: '1px solid #ddd', borderRadius: '4px', fontSize: '0.85rem', resize: 'none', overflow: 'hidden', minHeight: '36px', fontFamily: 'inherit' }}
+                          rows={2}
+                        />
+                        <button onClick={() => handleNaUpdateComment(c.id)} style={{ border: 'none', background: 'transparent', color: '#bdc3c7', cursor: 'pointer' }}><FiCheck size={14} /></button>
+                        <button onClick={() => setNaEditingCommentId(null)} style={{ border: 'none', background: 'transparent', color: '#bdc3c7', cursor: 'pointer' }}><FiX size={14} /></button>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '0.85rem', color: '#2c3e50', whiteSpace: 'pre-wrap', marginTop: '0.15rem' }}>{c.content}</div>
+                    )}
+                  </div>
+                ))}
+
+                {naComments.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: '1rem', color: '#bdc3c7', fontSize: '0.85rem' }}>コメントはまだありません</div>
+                )}
+
+                {/* コメント入力 */}
+                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-end' }}>
+                  <textarea
+                    value={naCommentText}
+                    onChange={e => setNaCommentText(e.target.value)}
+                    onInput={autoResize}
+                    onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && naCommentText.trim()) { e.preventDefault(); handleNaAddComment(); } }}
+                    placeholder="コメントを入力..."
+                    rows={2}
+                    style={{ flex: 1, padding: '0.6rem', border: '1px solid #ddd', borderRadius: '6px', fontSize: '0.85rem', resize: 'none', overflow: 'hidden', minHeight: '40px', fontFamily: 'inherit', outline: 'none' }}
+                  />
+                  <button
+                    onClick={handleNaAddComment}
+                    disabled={!naCommentText.trim()}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      width: 36, height: 36, border: 'none', borderRadius: '50%',
+                      background: naCommentText.trim() ? '#3498db' : '#bdc3c7',
+                      color: 'white', cursor: naCommentText.trim() ? 'pointer' : 'not-allowed', flexShrink: 0
+                    }}
+                  >
+                    <FiSend size={14} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </ExpandedContent>
   );
@@ -1994,7 +2249,16 @@ const SalesTab = ({ project, operators, salesReps, subCol = 'salesRecords', onPh
                     : <FiChevronRight size={14} />
                   }
                 </RecordTd>
-                <RecordTd>{mode === 'newCase' ? '新規' : (record.recordType || '-')}</RecordTd>
+                <RecordTd>
+                  <AssigneeSelect
+                    value={record.recordType || (mode === 'newCase' ? '新規' : '継続')}
+                    onChange={e => handleRecordSelectChange(e, record.id, 'recordType')}
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <option value="新規">新規</option>
+                    <option value="継続">継続</option>
+                  </AssigneeSelect>
+                </RecordTd>
                 <RecordTd>
                   <PhaseBadge $color={STATUS_COLORS[record.phase]}>
                     {record.phase || '-'}
