@@ -692,8 +692,10 @@ function HomeDashboard() {
         });
       });
 
-      setDeals(dealsList);
-      calculateStats(dealsList);
+      // 既存案件側の複製レコードを除外（新規側を正とする）
+      const filteredDeals = dealsList.filter(d => d.isExistingProject !== true);
+      setDeals(filteredDeals);
+      calculateStats(filteredDeals);
     } catch (error) {
       console.error('データ取得エラー:', error);
     } finally {

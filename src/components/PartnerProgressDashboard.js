@@ -594,11 +594,12 @@ function PartnerProgressDashboard() {
         const data = docSnap.data();
         
         // 厳格にパートナー会社の案件のみを抽出（他社データ混入防止）
-        if (data.introducer === partnerCompany) {
+        // 既存案件側の複製レコードも除外（新規側を正とする）
+        if (data.introducer === partnerCompany && data.isExistingProject !== true) {
           progressItems.push({
             id: docSnap.id,
             ...data,
-            lastContactDate: data.lastContactDate?.toDate?.()?.toLocaleDateString('ja-JP') || 
+            lastContactDate: data.lastContactDate?.toDate?.()?.toLocaleDateString('ja-JP') ||
                             data.lastContactDate || null,
             nextActionDate: data.nextActionDate || null,
             createdAt: data.createdAt?.toDate?.()?.toISOString() || null,

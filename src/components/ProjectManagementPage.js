@@ -47,9 +47,13 @@ const calcContinuationStatus = (records, isExistingProject) => {
     if (isPhase8 && endDate && endDate < today) {
       return '終了';
     }
-    // 継続提案中: フェーズ1-7（レコード件数不問）
-    if (isPhase1to7) {
+    // 継続提案中: フェーズ1-7 & レコード2件以上（リピート案件）
+    if (isPhase1to7 && records.length >= 2) {
       return '継続提案中';
+    }
+    // 新規提案中: フェーズ1-7 & レコード1件（初回提案）
+    if (isPhase1to7 && records.length === 1) {
+      return '新規提案中';
     }
     // 施策実施中: startDateあり & (endDateが未来 or 空)
     if (startDate && (!endDate || endDate >= today)) {

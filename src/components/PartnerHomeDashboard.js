@@ -434,6 +434,8 @@ function PartnerHomeDashboard() {
       
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
+        // 既存案件側の複製レコードを除外（新規側を正とする）
+        if (data.isExistingProject === true) return;
         if (data.status && STATUSES.includes(data.status)) {
           counts[data.status] = (counts[data.status] || 0) + 1;
           // 稼働終了以外の案件をカウント
@@ -482,16 +484,18 @@ function PartnerHomeDashboard() {
       
       progressSnapshot.forEach((docSnap) => {
         const data = docSnap.data();
+        // 既存案件側の複製レコードを除外（新規側を正とする）
+        if (data.isExistingProject === true) return;
         const representativeName = data.partnerRepresentative || data.representative || '未割当';
         const department = representativeDepartmentMap[representativeName] || '未設定';
-        
+
         if (!departmentCounts[department]) {
           departmentCounts[department] = {};
           STATUSES.forEach(status => {
             departmentCounts[department][status] = 0;
           });
         }
-        
+
         if (data.status && STATUSES.includes(data.status)) {
           departmentCounts[department][data.status] = (departmentCounts[department][data.status] || 0) + 1;
         }
@@ -543,10 +547,11 @@ function PartnerHomeDashboard() {
       const q = query(progressRef, where('introducer', '==', partnerCompany));
       const querySnapshot = await getDocs(q);
       
-      // 全体データから担当者一覧を取得（フィルター無し）
+      // 全体データから担当者一覧を取得（フィルター無し、既存案件複製は除外）
       const allRepresentatives = new Set();
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
+        if (data.isExistingProject === true) return;
         const representative = data.partnerRepresentative || data.representative || '未割当';
         allRepresentatives.add(representative);
       });
@@ -568,7 +573,9 @@ function PartnerHomeDashboard() {
       
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
-        
+        // 既存案件側の複製レコードを除外（新規側を正とする）
+        if (data.isExistingProject === true) return;
+
         // 日付フィルター適用（createdAtまたはupdatedAtを基準）
         const checkDate = data.updatedAt?.toDate?.() || data.createdAt?.toDate?.() || new Date(data.updatedAt || data.createdAt);
         const checkDateString = checkDate ? checkDate.toISOString().split('T')[0] : null;
@@ -624,7 +631,9 @@ function PartnerHomeDashboard() {
       
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
-        
+        // 既存案件側の複製レコードを除外（新規側を正とする）
+        if (data.isExistingProject === true) return;
+
         // 「他社案件」を除外
         if (data.proposalMenu !== '他社案件') {
           const company = data.introducer || '直営業';
@@ -692,6 +701,8 @@ function PartnerHomeDashboard() {
 
         progressSnapshot.forEach((docSnap) => {
           const data = docSnap.data();
+          // 既存案件側の複製レコードを除外（新規側を正とする）
+          if (data.isExistingProject === true) return;
           // confirmedDateがその月のものをカウント
           const confirmedDate = data.confirmedDate;
           if (confirmedDate && confirmedDate.startsWith(month)) {
@@ -760,6 +771,8 @@ function PartnerHomeDashboard() {
 
         progressSnapshot.forEach((docSnap) => {
           const data = docSnap.data();
+          // 既存案件側の複製レコードを除外（新規側を正とする）
+          if (data.isExistingProject === true) return;
           // receivedOrderMonth（実施月）がその月のものをカウント
           const implementationMonth = data.receivedOrderMonth;
           if (implementationMonth && implementationMonth === month) {

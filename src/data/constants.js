@@ -92,6 +92,7 @@ export const LEAD_SOURCES = [
 export const CONTINUATION_STATUSES = [
   '施策実施中',
   '継続提案中',
+  '新規提案中',
   '終了',
   '継続成約'
 ];
@@ -100,6 +101,7 @@ export const CONTINUATION_STATUSES = [
 export const CONTINUATION_STATUS_COLORS = {
   '施策実施中': '#3498db',
   '継続提案中': '#f39c12',
+  '新規提案中': '#5dade2',
   '終了': '#95a5a6',
   '継続成約': '#27ae60',
   '新規成約': '#2ecc71'

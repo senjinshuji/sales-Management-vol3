@@ -271,8 +271,11 @@ function KanbanBoard() {
         });
       });
       
-      console.log('✅ KanbanBoard: 進捗データ取得成功:', progressItems.length, '件');
-      setDeals(progressItems);
+      // 既存案件側の複製レコードを除外（新規側を正とする）
+      const filteredItems = progressItems.filter(d => d.isExistingProject !== true);
+
+      console.log('✅ KanbanBoard: 進捗データ取得成功:', filteredItems.length, '件 (除外:', progressItems.length - filteredItems.length, '件)');
+      setDeals(filteredItems);
     } catch (error) {
       console.error('💥 KanbanBoard: 進捗データ取得エラー:', error);
       // エラー時はモックデータを使用

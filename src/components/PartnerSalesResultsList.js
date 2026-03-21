@@ -268,16 +268,19 @@ function PartnerSalesResultsList() {
         });
       });
       
+      // 既存案件側の複製レコードを除外（新規側を正とする）
+      const filteredResults = results.filter(d => d.isExistingProject !== true);
+
       // 受注月でソート（新しい順）
-      results.sort((a, b) => {
+      filteredResults.sort((a, b) => {
         if (!a.receivedOrderMonth && !b.receivedOrderMonth) return 0;
         if (!a.receivedOrderMonth) return 1;
         if (!b.receivedOrderMonth) return -1;
         return b.receivedOrderMonth.localeCompare(a.receivedOrderMonth);
       });
-      
-      console.log('✅ パートナー成約案件一覧取得成功:', results.length, '件');
-      setSalesResults(results);
+
+      console.log('✅ パートナー成約案件一覧取得成功:', filteredResults.length, '件 (除外:', results.length - filteredResults.length, '件)');
+      setSalesResults(filteredResults);
     } catch (error) {
       console.error('💥 パートナー成約案件一覧取得エラー:', error);
       setSalesResults([]);
