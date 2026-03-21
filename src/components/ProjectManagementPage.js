@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import styled from 'styled-components';
-import { FiSearch, FiChevronDown, FiChevronUp, FiPlus, FiTrash2, FiUpload } from 'react-icons/fi';
+import { FiSearch, FiChevronDown, FiChevronUp, FiPlus, FiTrash2, FiUpload, FiEdit3 } from 'react-icons/fi';
 import { db } from '../firebase.js';
 import { collection, addDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
-import { fetchProjects, fetchProjectSalesData } from '../services/projectService.js';
+import { fetchProjects, fetchProjectSalesData, updateProject } from '../services/projectService.js';
 import { CONTINUATION_STATUS_COLORS } from '../data/constants.js';
 import ProjectDetailPanel from './ProjectDetailPanel.js';
 
@@ -196,6 +196,7 @@ const TableCell = styled.td`
   color: #2c3e50;
   vertical-align: middle;
 `;
+
 
 const StatusBadge = styled.span`
   display: inline-block;
@@ -400,6 +401,7 @@ const ProjectManagementPage = () => {
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editModal, setEditModal] = useState({ show: false, project: null });
   const [showCsvGuide, setShowCsvGuide] = useState(false);
   const [addForm, setAddForm] = useState({ companyName: '', introducer: '', productName: '' });
   const [isSaving, setIsSaving] = useState(false);
@@ -640,6 +642,26 @@ const ProjectManagementPage = () => {
     }
   };
 
+  // 編集モーダル保存
+  const handleEditSave = async () => {
+    const p = editModal.project;
+    if (!p) return;
+    try {
+      await updateProject(p.id, {
+        companyName: p.companyName,
+        introducer: p.introducer,
+        productName: p.productName
+      });
+      setProjects(prev => prev.map(proj =>
+        proj.id === p.id ? { ...proj, companyName: p.companyName, introducer: p.introducer, productName: p.productName } : proj
+      ));
+      setEditModal({ show: false, project: null });
+    } catch (error) {
+      console.error('Failed to update project:', error);
+      alert('更新に失敗しました');
+    }
+  };
+
   // プロジェクト更新
   const handleProjectUpdate = useCallback((updatedProject) => {
     setProjects((prev) =>
@@ -747,13 +769,21 @@ const ProjectManagementPage = () => {
                     {p.latestNaDueDate || '-'}
                     {renderDueDateBadge(p.latestNaDueDate)}
                   </TableCell>
-                  <TableCell>
-                    <FiTrash2
-                      size={14}
-                      style={{ color: '#e74c3c', cursor: 'pointer' }}
-                      onClick={(e) => handleDeleteProject(e, p.id)}
-                      title="削除"
-                    />
+                  <TableCell onClick={e => e.stopPropagation()}>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <FiEdit3
+                        size={14}
+                        style={{ color: '#f39c12', cursor: 'pointer' }}
+                        onClick={() => setEditModal({ show: true, project: { ...p } })}
+                        title="編集"
+                      />
+                      <FiTrash2
+                        size={14}
+                        style={{ color: '#e74c3c', cursor: 'pointer' }}
+                        onClick={(e) => handleDeleteProject(e, p.id)}
+                        title="削除"
+                      />
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -856,6 +886,43 @@ const ProjectManagementPage = () => {
               >
                 {isSaving ? '保存中...' : '追加'}
               </ModalBtn>
+            </ModalActions>
+          </ModalBox>
+        </ModalOverlay>
+      )}
+
+      {/* 編集モーダル */}
+      {editModal.show && (
+        <ModalOverlay onClick={() => setEditModal({ show: false, project: null })}>
+          <ModalBox onClick={e => e.stopPropagation()}>
+            <ModalTitle>案件編集</ModalTitle>
+            <FormGroup>
+              <FormLabel>会社名</FormLabel>
+              <FormInput
+                type="text"
+                value={editModal.project?.companyName || ''}
+                onChange={e => setEditModal(prev => ({ ...prev, project: { ...prev.project, companyName: e.target.value } }))}
+              />
+            </FormGroup>
+            <FormGroup>
+              <FormLabel>代理店名</FormLabel>
+              <FormInput
+                type="text"
+                value={editModal.project?.introducer || ''}
+                onChange={e => setEditModal(prev => ({ ...prev, project: { ...prev.project, introducer: e.target.value } }))}
+              />
+            </FormGroup>
+            <FormGroup>
+              <FormLabel>商材名</FormLabel>
+              <FormInput
+                type="text"
+                value={editModal.project?.productName || ''}
+                onChange={e => setEditModal(prev => ({ ...prev, project: { ...prev.project, productName: e.target.value } }))}
+              />
+            </FormGroup>
+            <ModalActions>
+              <ModalBtn onClick={() => setEditModal({ show: false, project: null })}>キャンセル</ModalBtn>
+              <ModalBtn $primary onClick={handleEditSave}>保存</ModalBtn>
             </ModalActions>
           </ModalBox>
         </ModalOverlay>

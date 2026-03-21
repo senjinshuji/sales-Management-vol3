@@ -25,12 +25,15 @@ import {
 export const fetchProjects = async () => {
   try {
     const progressRef = collection(db, 'progressDashboard');
+    // フェーズ8のみFirestoreで絞り込み、isExistingProjectはクライアントでフィルタ
     const q = query(progressRef, where('status', '==', 'フェーズ8'));
     const snapshot = await getDocs(q);
-    return snapshot.docs.map((docSnap) => ({
+    const all = snapshot.docs.map((docSnap) => ({
       id: docSnap.id,
       ...docSnap.data()
     }));
+    // isExistingProject: falseの新規レコードを除外
+    return all.filter(doc => doc.isExistingProject !== false);
   } catch (error) {
     console.error('Failed to fetch projects:', error);
     throw error;
@@ -567,6 +570,23 @@ export const deleteSalesEntry = async (projectId, recordId, entryId, subCol = 's
     await deleteDoc(entryRef);
   } catch (error) {
     console.error('Failed to delete sales entry:', error);
+    throw error;
+  }
+};
+
+/**
+ * 営業エントリを更新する
+ * @param {string} projectId - 案件ID
+ * @param {string} recordId - 営業記録ID
+ * @param {string} entryId - エントリID
+ * @param {object} data - 更新データ
+ */
+export const updateSalesEntry = async (projectId, recordId, entryId, data, subCol = 'salesRecords') => {
+  try {
+    const entryRef = doc(db, 'progressDashboard', projectId, subCol, recordId, 'entries', entryId);
+    await updateDoc(entryRef, data);
+  } catch (error) {
+    console.error('Failed to update sales entry:', error);
     throw error;
   }
 };

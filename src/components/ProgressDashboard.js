@@ -2,7 +2,8 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import styled from 'styled-components';
 import { FiSearch, FiChevronDown, FiChevronUp, FiPlus, FiTrash2, FiUpload, FiEdit3 } from 'react-icons/fi';
 import { useLocation, useSearchParams } from 'react-router-dom';
-import { STATUS_COLORS, SALES_REPRESENTATIVES, STATUSES, LEAD_SOURCES } from '../data/constants.js';
+import { STATUS_COLORS, STATUSES, LEAD_SOURCES } from '../data/constants.js';
+import { fetchStaffByRole } from '../services/staffService.js';
 import { db } from '../firebase.js';
 import { collection, query, orderBy, getDocs, deleteDoc, doc, updateDoc, serverTimestamp, addDoc, setDoc } from 'firebase/firestore';
 import ReceivedOrderModal from './ReceivedOrderModal.js';
@@ -452,7 +453,8 @@ const EmptyText = styled.div`
 function ProgressDashboard() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState(STATUSES);
-  const [representativeFilter, setRepresentativeFilter] = useState(SALES_REPRESENTATIVES);
+  const [representativeFilter, setRepresentativeFilter] = useState([]);
+  const [salesRepresentatives, setSalesRepresentatives] = useState([]);
   const [introducerFilter, setIntroducerFilter] = useState([]);
   const [deals, setDeals] = useState([]);
   const [deleteModal, setDeleteModal] = useState({ show: false, deal: null });
@@ -489,11 +491,24 @@ function ProgressDashboard() {
   const isPartnerView = window.location.pathname.startsWith('/partner') ||
                        window.location.pathname.startsWith('/partner-entry');
 
+  // 営業担当者マスターを取得
+  const fetchSalesReps = async () => {
+    try {
+      const staff = await fetchStaffByRole('sales');
+      const names = staff.map(s => s.name);
+      setSalesRepresentatives(names);
+      setRepresentativeFilter(names);
+    } catch (error) {
+      console.error('Failed to fetch sales staff:', error);
+    }
+  };
+
   // Firestoreからデータ取得
   useEffect(() => {
     fetchProgressData();
     fetchIntroducers();
     fetchProposalMenus();
+    fetchSalesReps();
   }, []);
 
   // 紹介者マスター取得
@@ -631,6 +646,7 @@ function ProgressDashboard() {
 
   // 削除
   const handleDelete = async (deal) => {
+    if (!window.confirm(`「${deal.companyName}（${deal.productName}）」を削除しますか？`)) return;
     try {
       const dealBackup = { ...deal };
       await deleteDoc(doc(db, 'progressDashboard', deal.id));
@@ -649,7 +665,6 @@ function ProgressDashboard() {
       });
 
       await fetchProgressData();
-      setDeleteModal({ show: false, deal: null });
     } catch (error) {
       console.error('Failed to delete:', error);
       alert('削除に失敗しました');
@@ -814,6 +829,7 @@ function ProgressDashboard() {
         status: addForm.status || 'フェーズ1',
         expectedBudget: addForm.expectedBudget ? Number(addForm.expectedBudget) : null,
         rank: addForm.rank || '',
+        isExistingProject: false,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       };
@@ -848,8 +864,29 @@ function ProgressDashboard() {
 
     // ヘッダー行をスキップ
     const startIdx = lines[0].includes('会社名') ? 1 : 0;
+    // 引用符付きフィールド（"¥1,000,000"など）を考慮したCSVパース
+    const parseCsvLine = (line) => {
+      const cols = [];
+      let current = '';
+      let inQuotes = false;
+      for (const ch of line) {
+        if (ch === '"') { inQuotes = !inQuotes; continue; }
+        if (ch === ',' && !inQuotes) { cols.push(current.trim()); current = ''; continue; }
+        current += ch;
+      }
+      cols.push(current.trim());
+      return cols;
+    };
+
+    // 金額文字列を数値に変換（¥1,000,000 → 1000000）
+    const parseBudget = (val) => {
+      if (!val) return null;
+      const num = Number(val.replace(/[¥￥,]/g, ''));
+      return isNaN(num) ? null : num;
+    };
+
     const rows = lines.slice(startIdx).map(line => {
-      const cols = line.split(',').map(c => c.trim());
+      const cols = parseCsvLine(line);
       return {
         companyName: cols[0] || '',
         introducer: cols[1] || '',
@@ -857,7 +894,7 @@ function ProgressDashboard() {
         leadSource: cols[3] || '',
         representative: cols[4] || '',
         status: cols[5] || 'フェーズ1',
-        expectedBudget: cols[6] ? Number(cols[6]) : null,
+        expectedBudget: parseBudget(cols[6]),
         rank: cols[7] || ''
       };
     }).filter(r => r.companyName && r.productName);
@@ -871,18 +908,50 @@ function ProgressDashboard() {
 
     try {
       for (const row of rows) {
-        await addDoc(collection(db, 'progressDashboard'), {
+        const status = row.status || 'フェーズ1';
+        const isPhase8 = status === 'フェーズ8';
+        // マスターに存在しない担当者は空欄にする
+        const rep = salesRepresentatives.includes(row.representative) ? row.representative : '';
+
+        // 新規側のレコード（常にisExistingProject: falseで新規一覧に表示）
+        const docRef = await addDoc(collection(db, 'progressDashboard'), {
           companyName: row.companyName,
           introducer: row.introducer === '-' ? '' : row.introducer,
           productName: row.productName,
           leadSource: row.leadSource,
-          representative: row.representative,
-          status: row.status || 'フェーズ1',
+          representative: rep,
+          status,
           expectedBudget: row.expectedBudget,
           rank: row.rank,
+          isExistingProject: false,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         });
+
+        // フェーズ8の場合は既存側にも別レコードを作成
+        if (isPhase8) {
+          const existingRef = await addDoc(collection(db, 'progressDashboard'), {
+            companyName: row.companyName,
+            introducer: row.introducer === '-' ? '' : row.introducer,
+            productName: row.productName,
+            leadSource: row.leadSource,
+            representative: rep,
+            status: 'フェーズ8',
+            expectedBudget: row.expectedBudget,
+            rank: row.rank,
+            isExistingProject: true,
+            confirmedDate: new Date().toISOString().split('T')[0],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
+          await addSalesRecord(existingRef.id, {
+            phase: 'フェーズ8',
+            budget: row.expectedBudget || 0,
+            date: new Date().toISOString().split('T')[0],
+            recordType: '新規',
+            createdAt: new Date()
+          });
+        }
       }
       alert(`${rows.length}件を追加しました`);
       await fetchProgressData();
@@ -965,6 +1034,7 @@ function ProgressDashboard() {
         operatorRep: orderData.operatorRep || '',
         startDate: orderData.startDate || '',
         endDate: orderData.endDate || '',
+        recordType: '新規',
         createdAt: new Date()
       });
 
@@ -1066,18 +1136,18 @@ function ProgressDashboard() {
               <FilterDropdownButton type="button" onClick={() => toggleDropdown('representative')}>
                 <span>
                   {representativeFilter.length === 0 ? '選択してください'
-                    : representativeFilter.length === SALES_REPRESENTATIVES.length ? '全て選択中'
+                    : representativeFilter.length === salesRepresentatives.length ? '全て選択中'
                     : `${representativeFilter.length}件選択中`}
                 </span>
                 <FiChevronDown />
               </FilterDropdownButton>
               {dropdownOpen.representative && (
                 <FilterDropdownList>
-                  <FilterToggleAllButton type="button" onClick={() => handleToggleAll('representative', SALES_REPRESENTATIVES)}>
-                    {representativeFilter.length === SALES_REPRESENTATIVES.length ? '全て解除' : '全て選択'}
+                  <FilterToggleAllButton type="button" onClick={() => handleToggleAll('representative', salesRepresentatives)}>
+                    {representativeFilter.length === salesRepresentatives.length ? '全て解除' : '全て選択'}
                   </FilterToggleAllButton>
                   <FilterCheckboxContainer>
-                    {SALES_REPRESENTATIVES.map(rep => (
+                    {salesRepresentatives.map(rep => (
                       <FilterCheckboxItem key={rep}>
                         <input
                           type="checkbox"
@@ -1235,7 +1305,7 @@ function ProgressDashboard() {
                         <FiTrash2
                           size={14}
                           style={{ color: '#e74c3c', cursor: 'pointer' }}
-                          onClick={() => setDeleteModal({ show: true, deal })}
+                          onClick={() => handleDelete(deal)}
                           title="削除"
                         />
                       </div>
@@ -1257,30 +1327,6 @@ function ProgressDashboard() {
             <NaModalClose onClick={() => setNaModalText(null)}>閉じる</NaModalClose>
           </NaModalContent>
         </NaModal>
-      )}
-
-      {/* 削除確認モーダル */}
-      {deleteModal.show && (
-        <ModalOverlay onClick={() => setDeleteModal({ show: false, deal: null })}>
-          <ModalBox onClick={(e) => e.stopPropagation()}>
-            <ModalTitle>案件削除の確認</ModalTitle>
-            <p style={{ margin: '0 0 1.5rem', color: '#555', fontSize: '0.9rem' }}>
-              本当に「{deleteModal.deal?.companyName}（{deleteModal.deal?.productName}）」を削除しますか？
-            </p>
-            <ModalActions>
-              <ModalBtn onClick={() => setDeleteModal({ show: false, deal: null })}>
-                キャンセル
-              </ModalBtn>
-              <ModalBtn
-                $primary
-                onClick={() => handleDelete(deleteModal.deal)}
-                style={{ background: '#e74c3c' }}
-              >
-                削除する
-              </ModalBtn>
-            </ModalActions>
-          </ModalBox>
-        </ModalOverlay>
       )}
 
       {/* 編集モーダル */}
@@ -1323,7 +1369,7 @@ function ProgressDashboard() {
                 onChange={e => setEditModal(prev => ({ ...prev, deal: { ...prev.deal, representative: e.target.value } }))}
               >
                 <option value="">選択してください</option>
-                {SALES_REPRESENTATIVES.map(rep => (
+                {salesRepresentatives.map(rep => (
                   <option key={rep} value={rep}>{rep}</option>
                 ))}
               </FormSelect>
@@ -1517,7 +1563,7 @@ function ProgressDashboard() {
                 onChange={e => setAddForm(prev => ({ ...prev, representative: e.target.value }))}
               >
                 <option value="">選択してください</option>
-                {SALES_REPRESENTATIVES.map(rep => (
+                {salesRepresentatives.map(rep => (
                   <option key={rep} value={rep}>{rep}</option>
                 ))}
               </FormSelect>

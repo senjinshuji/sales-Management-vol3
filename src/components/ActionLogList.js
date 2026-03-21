@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { FiClock, FiUser, FiFileText, FiTrash2, FiEdit, FiX, FiCalendar } from 'react-icons/fi';
 import { db } from '../firebase.js';
-import { collection, query, orderBy, getDocs, deleteDoc, doc } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { STATUS_COLORS } from '../data/constants.js';
 
 const LogListContainer = styled.div`
@@ -221,6 +221,39 @@ const ModalMetaItem = styled.div`
   }
 `;
 
+const EditFormGroup = styled.div`
+  margin-bottom: 1rem;
+`;
+
+const EditLabel = styled.label`
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 0.3rem;
+`;
+
+const EditInput = styled.input`
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  box-sizing: border-box;
+  &:focus { outline: none; border-color: #3498db; }
+`;
+
+const EditTextarea = styled.textarea`
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  box-sizing: border-box;
+  resize: vertical;
+  &:focus { outline: none; border-color: #3498db; }
+`;
+
 const ModalActions = styled.div`
   display: flex;
   gap: 1rem;
@@ -234,6 +267,7 @@ function ActionLogList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedLog, setSelectedLog] = useState(null);
+  const [editLog, setEditLog] = useState(null);
   
   // パートナー向けかどうかを判定
   const isPartnerView = window.location.pathname.startsWith('/partner') || 
@@ -305,6 +339,26 @@ function ActionLogList() {
     } catch (err) {
       console.error('💥 削除エラー:', err);
       alert('削除に失敗しました');
+    }
+  };
+
+  // 編集保存
+  const handleEditSave = async () => {
+    if (!editLog) return;
+    try {
+      await updateDoc(doc(db, 'actionLogs', editLog.id), {
+        action: editLog.action,
+        summary: editLog.summary || '',
+        nextAction: editLog.nextAction || '',
+        nextActionDate: editLog.nextActionDate || null
+      });
+      setActionLogs(prev => prev.map(log =>
+        log.id === editLog.id ? { ...log, ...editLog } : log
+      ));
+      setEditLog(null);
+    } catch (err) {
+      console.error('Failed to update action log:', err);
+      alert('更新に失敗しました');
     }
   };
 
@@ -415,14 +469,21 @@ function ActionLogList() {
             )}
             
             <LogActions>
-              <ActionButton 
+              <ActionButton
+                className="edit"
+                onClick={() => setEditLog({ ...log })}
+              >
+                <FiEdit />
+                編集
+              </ActionButton>
+              <ActionButton
                 className="edit"
                 onClick={() => showLogDetail(log)}
               >
-                <FiEdit />
+                <FiFileText />
                 詳細
               </ActionButton>
-              <ActionButton 
+              <ActionButton
                 className="delete"
                 onClick={() => deleteActionLog(log.id)}
               >
@@ -542,6 +603,64 @@ function ActionLogList() {
                 onClick={closeModal}
               >
                 閉じる
+              </ActionButton>
+            </ModalActions>
+          </ModalContent>
+        </Modal>
+      )}
+      {/* 編集モーダル */}
+      {editLog && (
+        <Modal onClick={() => setEditLog(null)}>
+          <ModalContent onClick={e => e.stopPropagation()}>
+            <ModalHeader>
+              <ModalTitle>アクションログ編集</ModalTitle>
+              <CloseButton onClick={() => setEditLog(null)}>
+                <FiX />
+              </CloseButton>
+            </ModalHeader>
+
+            <EditFormGroup>
+              <EditLabel>アクション</EditLabel>
+              <EditInput
+                type="text"
+                value={editLog.action || ''}
+                onChange={e => setEditLog(prev => ({ ...prev, action: e.target.value }))}
+              />
+            </EditFormGroup>
+
+            <EditFormGroup>
+              <EditLabel>要約</EditLabel>
+              <EditTextarea
+                value={editLog.summary || ''}
+                onChange={e => setEditLog(prev => ({ ...prev, summary: e.target.value }))}
+                rows={4}
+              />
+            </EditFormGroup>
+
+            <EditFormGroup>
+              <EditLabel>次回アクション</EditLabel>
+              <EditInput
+                type="text"
+                value={editLog.nextAction || ''}
+                onChange={e => setEditLog(prev => ({ ...prev, nextAction: e.target.value }))}
+              />
+            </EditFormGroup>
+
+            <EditFormGroup>
+              <EditLabel>次回アクション予定日</EditLabel>
+              <EditInput
+                type="date"
+                value={editLog.nextActionDate || ''}
+                onChange={e => setEditLog(prev => ({ ...prev, nextActionDate: e.target.value }))}
+              />
+            </EditFormGroup>
+
+            <ModalActions>
+              <ActionButton className="delete" onClick={() => setEditLog(null)}>
+                キャンセル
+              </ActionButton>
+              <ActionButton className="edit" onClick={handleEditSave}>
+                保存
               </ActionButton>
             </ModalActions>
           </ModalContent>

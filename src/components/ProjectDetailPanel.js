@@ -12,7 +12,7 @@ import {
   addSalesRecord, fetchSalesRecords, updateSalesRecord, deleteSalesRecord,
   addKeyPerson, fetchKeyPersons, updateKeyPerson, deleteKeyPerson,
   addOperationMemo, fetchOperationMemos, deleteOperationMemo,
-  addSalesEntry, fetchSalesEntries, deleteSalesEntry, updateSalesEntryStatus
+  addSalesEntry, fetchSalesEntries, deleteSalesEntry, updateSalesEntry, updateSalesEntryStatus
 } from '../services/projectService.js';
 
 // ============================================
@@ -310,9 +310,6 @@ const ActionMeta = styled.div`
 `;
 
 const DeleteButton = styled.button`
-  position: absolute;
-  top: 0.75rem;
-  right: 0.75rem;
   background: none;
   border: none;
   cursor: pointer;
@@ -320,7 +317,40 @@ const DeleteButton = styled.button`
   opacity: 0.6;
   display: flex;
   align-items: center;
+  padding: 0.2rem;
   &:hover { opacity: 1; }
+`;
+
+const EditButton = styled.button`
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #f39c12;
+  opacity: 0.6;
+  display: flex;
+  align-items: center;
+  padding: 0.2rem;
+  &:hover { opacity: 1; }
+`;
+
+const EntryEditTextarea = styled.textarea`
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  box-sizing: border-box;
+  resize: vertical;
+  &:focus { outline: none; border-color: #3498db; }
+`;
+
+const EntryEditInput = styled.input`
+  padding: 0.4rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  flex: 1;
+  &:focus { outline: none; border-color: #3498db; }
 `;
 
 // ============================================
@@ -516,6 +546,17 @@ const PhaseBadge = styled.span`
   font-weight: 600;
   color: white;
   background: ${props => props.$color || '#95a5a6'};
+`;
+
+const InlineInput = styled.input`
+  padding: 0.4rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  background: white;
+  width: 100%;
+  box-sizing: border-box;
+  &:focus { outline: none; border-color: #3498db; }
 `;
 
 const AssigneeSelect = styled.select`
@@ -1015,6 +1056,28 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
     }
   };
 
+  // 編集中のエントリ
+  const [editingEntry, setEditingEntry] = useState(null);
+
+  const handleEditSave = async () => {
+    if (!editingEntry) return;
+    try {
+      const updateData = {
+        memoContent: editingEntry.memoContent || '',
+        actionContent: editingEntry.actionContent || '',
+        actionDueDate: editingEntry.actionDueDate || '',
+        actionAssignee: editingEntry.actionAssignee || ''
+      };
+      await updateSalesEntry(projectId, record.id, editingEntry.id, updateData, subCol);
+      setEntries(prev => prev.map(e =>
+        e.id === editingEntry.id ? { ...e, ...updateData } : e
+      ));
+      setEditingEntry(null);
+    } catch (error) {
+      console.error('Failed to update sales entry:', error);
+    }
+  };
+
   /** エントリ削除 */
   const handleDelete = async (entryId) => {
     try {
@@ -1168,67 +1231,115 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
       ) : (
         entries.map((entry, index) => (
           <ActionCard key={entry.id}>
-            {/* フェーズ変更（変化時のみ表示） */}
-            {entry.phaseChange && (
-              <div style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#e67e22' }}>
-                  フェーズ変更: {entry.phaseChange}
-                </span>
-                <PhaseBadge $color={STATUS_COLORS[entry.phase]}>
-                  {entry.phase}
-                </PhaseBadge>
-              </div>
-            )}
+            {editingEntry && editingEntry.id === entry.id ? (
+              // 編集モード
+              <>
+                <SubSection style={{ marginBottom: '0.75rem' }}>
+                  <SubSectionTitle style={{ margin: '0 0 0.25rem' }}>接触メモ</SubSectionTitle>
+                  <EntryEditTextarea
+                    value={editingEntry.memoContent || ''}
+                    onChange={e => setEditingEntry(prev => ({ ...prev, memoContent: e.target.value }))}
+                    rows={3}
+                    placeholder="接触メモを入力..."
+                  />
+                </SubSection>
+                <SubSection style={{ marginBottom: '0.75rem' }}>
+                  <SubSectionTitle style={{ margin: '0 0 0.25rem' }}>ネクストアクション</SubSectionTitle>
+                  <EntryEditTextarea
+                    value={editingEntry.actionContent || ''}
+                    onChange={e => setEditingEntry(prev => ({ ...prev, actionContent: e.target.value }))}
+                    rows={2}
+                    placeholder="ネクストアクションを入力..."
+                  />
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
+                    <EntryEditInput
+                      type="date"
+                      value={editingEntry.actionDueDate || ''}
+                      onChange={e => setEditingEntry(prev => ({ ...prev, actionDueDate: e.target.value }))}
+                    />
+                    <EntryEditInput
+                      type="text"
+                      value={editingEntry.actionAssignee || ''}
+                      onChange={e => setEditingEntry(prev => ({ ...prev, actionAssignee: e.target.value }))}
+                      placeholder="担当者"
+                    />
+                  </div>
+                </SubSection>
+                <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                  <SmallButton onClick={() => setEditingEntry(null)}>取消</SmallButton>
+                  <SmallButton $primary onClick={handleEditSave}>保存</SmallButton>
+                </div>
+              </>
+            ) : (
+              // 表示モード
+              <>
+                {/* フェーズ変更（変化時のみ表示） */}
+                {entry.phaseChange && (
+                  <div style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#e67e22' }}>
+                      フェーズ変更: {entry.phaseChange}
+                    </span>
+                    <PhaseBadge $color={STATUS_COLORS[entry.phase]}>
+                      {entry.phase}
+                    </PhaseBadge>
+                  </div>
+                )}
 
-            {/* 接触メモ */}
-            {entry.memoContent && (
-              <SubSection style={{ marginBottom: entry.actionContent ? '0.75rem' : '0' }}>
-                <SubSectionTitle style={{ margin: '0 0 0.25rem' }}>接触メモ</SubSectionTitle>
-                <ActionContent>{entry.memoContent}</ActionContent>
-              </SubSection>
-            )}
+                {/* 接触メモ */}
+                {entry.memoContent && (
+                  <SubSection style={{ marginBottom: entry.actionContent ? '0.75rem' : '0' }}>
+                    <SubSectionTitle style={{ margin: '0 0 0.25rem' }}>接触メモ</SubSectionTitle>
+                    <ActionContent>{entry.memoContent}</ActionContent>
+                  </SubSection>
+                )}
 
-            {/* NA */}
-            {entry.actionContent && (
-              <SubSection style={{ marginBottom: 0 }}>
-                <SubSectionTitle style={{ margin: '0 0 0.25rem' }}>
-                  ネクストアクション
-                  {entry.actionDueDate && (
-                    <span style={{ color: '#3498db', fontWeight: 500 }}>{entry.actionDueDate}</span>
-                  )}
-                  {entry.actionAssignee && (
-                    <ActionAssignee>{entry.actionAssignee}</ActionAssignee>
-                  )}
-                  {/* ステータスバッジ + 切替ボタン */}
-                  <span
-                    onClick={() => handleToggleNaStatus(entry.id, entry.actionStatus || 'active')}
-                    style={{
-                      cursor: 'pointer',
-                      padding: '0.1rem 0.4rem',
-                      borderRadius: '4px',
-                      fontSize: '0.7rem',
-                      fontWeight: 600,
-                      color: 'white',
-                      background: entry.actionStatus === 'done' ? '#95a5a6' : '#8b0000',
-                      marginLeft: 'auto'
-                    }}
-                  >
-                    {entry.actionStatus === 'done' ? 'Done' : 'todo'}
-                  </span>
-                </SubSectionTitle>
-                <ActionContent style={{
-                  textDecoration: entry.actionStatus === 'done' ? 'line-through' : 'none',
-                  opacity: entry.actionStatus === 'done' ? 0.6 : 1
-                }}>
-                  {entry.actionContent}
-                </ActionContent>
-              </SubSection>
-            )}
+                {/* NA */}
+                {entry.actionContent && (
+                  <SubSection style={{ marginBottom: 0 }}>
+                    <SubSectionTitle style={{ margin: '0 0 0.25rem' }}>
+                      ネクストアクション
+                      {entry.actionDueDate && (
+                        <span style={{ color: '#3498db', fontWeight: 500 }}>{entry.actionDueDate}</span>
+                      )}
+                      {entry.actionAssignee && (
+                        <ActionAssignee>{entry.actionAssignee}</ActionAssignee>
+                      )}
+                      <span
+                        onClick={() => handleToggleNaStatus(entry.id, entry.actionStatus || 'active')}
+                        style={{
+                          cursor: 'pointer',
+                          padding: '0.1rem 0.4rem',
+                          borderRadius: '4px',
+                          fontSize: '0.7rem',
+                          fontWeight: 600,
+                          color: 'white',
+                          background: entry.actionStatus === 'done' ? '#95a5a6' : '#8b0000',
+                          marginLeft: 'auto'
+                        }}
+                      >
+                        {entry.actionStatus === 'done' ? 'Done' : 'todo'}
+                      </span>
+                    </SubSectionTitle>
+                    <ActionContent style={{
+                      textDecoration: entry.actionStatus === 'done' ? 'line-through' : 'none',
+                      opacity: entry.actionStatus === 'done' ? 0.6 : 1
+                    }}>
+                      {entry.actionContent}
+                    </ActionContent>
+                  </SubSection>
+                )}
 
-            <ActionMeta style={{ marginTop: '0.5rem' }}>{formatTimestamp(entry.createdAt)}</ActionMeta>
-            <DeleteButton onClick={() => handleDelete(entry.id)}>
-              <FiTrash2 size={14} />
-            </DeleteButton>
+                <ActionMeta style={{ marginTop: '0.5rem' }}>{formatTimestamp(entry.createdAt)}</ActionMeta>
+                <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end', marginTop: '0.25rem' }}>
+                  <EditButton onClick={() => setEditingEntry({ ...entry })}>
+                    <FiEdit2 size={14} />
+                  </EditButton>
+                  <DeleteButton onClick={() => handleDelete(entry.id)}>
+                    <FiTrash2 size={14} />
+                  </DeleteButton>
+                </div>
+              </>
+            )}
           </ActionCard>
         ))
       )}
@@ -1240,7 +1351,7 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
 // タブ2: 営業向け
 // ============================================
 
-const SalesTab = ({ project, operators, salesReps, subCol = 'salesRecords', onPhaseChange, onPhase8Submitted }) => {
+const SalesTab = ({ project, operators, salesReps, subCol = 'salesRecords', onPhaseChange, onPhase8Submitted, mode }) => {
   const [records, setRecords] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
   const [isAdding, setIsAdding] = useState(false);
@@ -1284,6 +1395,7 @@ const SalesTab = ({ project, operators, salesReps, subCol = 'salesRecords', onPh
         operatorRep: editForm.operatorRep,
         startDate: editForm.startDate,
         endDate: editForm.endDate,
+        recordType: mode === 'newCase' ? '新規' : '継続',
         createdAt: new Date()
       }, subCol);
       setIsAdding(false);
@@ -1346,6 +1458,7 @@ const SalesTab = ({ project, operators, salesReps, subCol = 'salesRecords', onPh
         <RecordThead>
           <tr>
             <RecordTh style={{ width: '30px' }}></RecordTh>
+            <RecordTh>区分</RecordTh>
             <RecordTh>フェーズ</RecordTh>
             <RecordTh>予算</RecordTh>
             <RecordTh>登録日</RecordTh>
@@ -1364,13 +1477,37 @@ const SalesTab = ({ project, operators, salesReps, subCol = 'salesRecords', onPh
                     : <FiChevronRight size={14} />
                   }
                 </RecordTd>
+                <RecordTd>{mode === 'newCase' ? '新規' : (record.recordType || '-')}</RecordTd>
                 <RecordTd>
                   <PhaseBadge $color={STATUS_COLORS[record.phase]}>
                     {record.phase || '-'}
                   </PhaseBadge>
                 </RecordTd>
-                <RecordTd>{record.budget ? formatCurrency(record.budget) + '円' : '-'}</RecordTd>
-                <RecordTd>{record.date || '-'}</RecordTd>
+                <RecordTd>
+                  <InlineInput
+                    type="number"
+                    value={record.budget || ''}
+                    onClick={e => e.stopPropagation()}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setRecords(prev => prev.map(r => r.id === record.id ? { ...r, budget: val } : r));
+                    }}
+                    onBlur={e => saveRecordField(record.id, 'budget', e.target.value ? Number(e.target.value) : '')}
+                    placeholder="予算"
+                  />
+                </RecordTd>
+                <RecordTd>
+                  <InlineInput
+                    type="date"
+                    value={record.date || ''}
+                    onClick={e => e.stopPropagation()}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setRecords(prev => prev.map(r => r.id === record.id ? { ...r, date: val } : r));
+                    }}
+                    onBlur={e => saveRecordField(record.id, 'date', e.target.value)}
+                  />
+                </RecordTd>
                 <RecordTd>
                   <AssigneeSelect
                     value={record.salesRep || ''}
@@ -1420,6 +1557,7 @@ const SalesTab = ({ project, operators, salesReps, subCol = 'salesRecords', onPh
           {isAdding && (
             <RecordTr>
               <RecordTd></RecordTd>
+              <RecordTd>{mode === 'newCase' ? '新規' : '継続'}</RecordTd>
               <RecordTd>
                 <select
                   value={editForm.phase}
@@ -1828,7 +1966,7 @@ const ProjectDetailPanel = ({ project, onClose, onProjectUpdate, mode, onPhase8S
             />
           )}
           {activeTab === 'sales' && (
-            <SalesTab project={project} operators={operators} salesReps={salesReps} subCol={salesSubCol} onPhaseChange={handlePhaseChange} onPhase8Submitted={onPhase8Submitted} />
+            <SalesTab project={project} operators={operators} salesReps={salesReps} subCol={salesSubCol} onPhaseChange={handlePhaseChange} onPhase8Submitted={onPhase8Submitted} mode={mode} />
           )}
           {activeTab === 'keyPerson' && mode !== 'newCase' && (
             <KeyPersonTab project={project} />
