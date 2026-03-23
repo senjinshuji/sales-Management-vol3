@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { FiSave, FiRefreshCw, FiCalendar, FiUser, FiFileText, FiPlus, FiAlertCircle, FiX, FiZap, FiUpload, FiDownload } from 'react-icons/fi';
-import { PROPOSAL_MENUS, PARTNER_PROPOSAL_MENUS, SALES_REPRESENTATIVES, STATUSES, DEPARTMENT_NAMES, LEAD_SOURCES } from '../data/constants.js';
+import { PROPOSAL_MENUS, PARTNER_PROPOSAL_MENUS, SALES_REPRESENTATIVES, STATUSES, DEPARTMENT_NAMES } from '../data/constants.js';
 import { introducers } from '../data/mockData.js';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { db } from '../firebase.js';
@@ -480,6 +480,9 @@ function LogEntryPage() {
   // 提案メニューマスター関連のstate
   const [proposalMenusList, setProposalMenusList] = useState([]);
 
+  // 流入経路マスター関連のstate
+  const [leadSourcesList, setLeadSourcesList] = useState([]);
+
   // CSV一括入稿関連のstate
   const [showCSVModal, setShowCSVModal] = useState(false);
   const [csvData, setCsvData] = useState([]);
@@ -590,14 +593,50 @@ function LogEntryPage() {
     }
   }, [isPartnerView]);
 
+  // 流入経路データを取得
+  const fetchLeadSources = useCallback(async () => {
+    try {
+      console.log('📋 LogEntryPage: 流入経路データをFirestoreから取得開始');
+
+      const sourcesRef = collection(db, 'leadSources');
+      const q = query(sourcesRef, where('isActive', '==', true));
+      const querySnapshot = await getDocs(q);
+
+      const sourcesData = [];
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        sourcesData.push({
+          id: docSnap.id,
+          ...data
+        });
+      });
+
+      // クライアントサイドでdisplayOrderでソート
+      sourcesData.sort((a, b) => (a.displayOrder || 999) - (b.displayOrder || 999));
+
+      console.log('✅ LogEntryPage: 流入経路データ取得成功:', sourcesData.length, '件');
+      setLeadSourcesList(sourcesData);
+    } catch (error) {
+      console.error('💥 LogEntryPage: 流入経路データ取得エラー:', error);
+      // エラー時はデフォルトの定数から生成
+      const { LEAD_SOURCES } = await import('../data/constants.js');
+      setLeadSourcesList(LEAD_SOURCES.map((source, index) => ({
+        id: index.toString(),
+        name: source,
+        isActive: true
+      })));
+    }
+  }, []);
+
   // Firestoreから紹介者データを取得
   useEffect(() => {
     fetchIntroducers();
     fetchProposalMenus();
+    fetchLeadSources();
     if (isPartnerView && partnerCompany) {
       fetchRepresentatives();
     }
-  }, [isPartnerView, partnerCompany, fetchIntroducers, fetchRepresentatives, fetchProposalMenus]);
+  }, [isPartnerView, partnerCompany, fetchIntroducers, fetchRepresentatives, fetchProposalMenus, fetchLeadSources]);
 
   // URLパラメータから事前入力データを取得（編集モード判定も含む）
   const [isEditMode, setIsEditMode] = useState(false);
@@ -1703,9 +1742,9 @@ function LogEntryPage() {
                 }}
               >
                 <option value="">選択してください</option>
-                {LEAD_SOURCES.map(source => (
-                  <option key={source} value={source}>
-                    {source}
+                {leadSourcesList.map(source => (
+                  <option key={source.id} value={source.name}>
+                    {source.name}
                   </option>
                 ))}
               </Select>

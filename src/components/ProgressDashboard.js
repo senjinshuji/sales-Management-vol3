@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import styled from 'styled-components';
 import { FiSearch, FiChevronDown, FiChevronUp, FiPlus, FiTrash2, FiUpload, FiEdit3 } from 'react-icons/fi';
 import { useLocation, useSearchParams } from 'react-router-dom';
-import { STATUS_COLORS, STATUSES, LEAD_SOURCES } from '../data/constants.js';
+import { STATUS_COLORS, STATUSES } from '../data/constants.js';
 import { fetchStaffByRole } from '../services/staffService.js';
 import { db } from '../firebase.js';
 import { collection, query, orderBy, getDocs, deleteDoc, doc, updateDoc, serverTimestamp, addDoc, setDoc } from 'firebase/firestore';
@@ -277,6 +277,8 @@ const NaText = styled.div`
   font-size: 0.8rem;
   color: #2c3e50;
   max-width: 200px;
+  white-space: normal;
+  word-break: break-word;
 `;
 
 const MoreLink = styled.span`
@@ -467,6 +469,7 @@ function ProgressDashboard() {
   const [receivedOrderModal, setReceivedOrderModal] = useState({ show: false, deal: null });
   const [introducersList, setIntroducersList] = useState([]);
   const [proposalMenusList, setProposalMenusList] = useState([]);
+  const [leadSourcesList, setLeadSourcesList] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [naDataMap, setNaDataMap] = useState({});
@@ -513,6 +516,7 @@ function ProgressDashboard() {
     fetchProgressData();
     fetchIntroducers();
     fetchProposalMenus();
+    fetchLeadSources();
     fetchSalesReps();
   }, []);
 
@@ -537,6 +541,20 @@ function ProgressDashboard() {
       setProposalMenusList(menus);
     } catch (error) {
       console.error('Failed to fetch proposal menus:', error);
+    }
+  };
+
+  // 流入経路マスター取得
+  const fetchLeadSources = async () => {
+    try {
+      const snap = await getDocs(collection(db, 'leadSources'));
+      const sources = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(s => s.isActive);
+      sources.sort((a, b) => (a.displayOrder || 999) - (b.displayOrder || 999));
+      setLeadSourcesList(sources);
+    } catch (error) {
+      console.error('Failed to fetch lead sources:', error);
     }
   };
 
@@ -1416,8 +1434,8 @@ function ProgressDashboard() {
                 onChange={e => setEditModal(prev => ({ ...prev, deal: { ...prev.deal, leadSource: e.target.value } }))}
               >
                 <option value="">選択してください</option>
-                {LEAD_SOURCES.map(source => (
-                  <option key={source} value={source}>{source}</option>
+                {leadSourcesList.map(source => (
+                  <option key={source.id} value={source.name}>{source.name}</option>
                 ))}
               </FormSelect>
             </FormGroup>
@@ -1553,8 +1571,8 @@ function ProgressDashboard() {
                 onChange={e => setAddForm(prev => ({ ...prev, leadSource: e.target.value, introducer: '', introducerId: '', partnerRepresentative: '' }))}
               >
                 <option value="">選択してください</option>
-                {LEAD_SOURCES.map(source => (
-                  <option key={source} value={source}>{source}</option>
+                {leadSourcesList.map(source => (
+                  <option key={source.id} value={source.name}>{source.name}</option>
                 ))}
               </FormSelect>
             </FormGroup>

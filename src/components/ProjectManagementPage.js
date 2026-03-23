@@ -217,6 +217,8 @@ const NaText = styled.div`
   font-size: 0.8rem;
   color: #2c3e50;
   max-width: 200px;
+  white-space: normal;
+  word-break: break-word;
 `;
 
 const MoreLink = styled.span`

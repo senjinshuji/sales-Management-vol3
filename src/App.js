@@ -21,6 +21,7 @@ import CastingManagePage from './components/CastingManagePage.js';
 import StaffMasterPage from './components/StaffMasterPage.js';
 import NextActionManagementPage from './components/NextActionManagementPage.js';
 import ProposalMenuMasterPage from './components/ProposalMenuMasterPage.js';
+import LeadSourceMasterPage from './components/LeadSourceMasterPage.js';
 import ProjectManagementPage from './components/ProjectManagementPage.js';
 import WeeklyReportPage from './components/WeeklyReportPage.js';
 import { UndoProvider } from './contexts/UndoContext.js';
@@ -308,6 +309,12 @@ function AdminApp() {
                 </NavDropdownLink>
               </NavDropdownItem>
               <NavDropdownItem>
+                <NavDropdownLink to="/lead-source-master">
+                  <FiList />
+                  流入経路マスター
+                </NavDropdownLink>
+              </NavDropdownItem>
+              <NavDropdownItem>
                 <NavDropdownLink to="/if/list">
                   <FiStar />
                   インフルエンサー
@@ -341,6 +348,7 @@ function AdminApp() {
           <Route path="/product/:id" element={<ProductDetailPage />} />
           <Route path="/introducer-master" element={<IntroducerMasterPage />} />
           <Route path="/proposal-menu-master" element={<ProposalMenuMasterPage />} />
+          <Route path="/lead-source-master" element={<LeadSourceMasterPage />} />
           <Route path="/sales-results" element={<SalesResultsList />} />
           <Route path="/continuation-management" element={<ContinuationManagementPage />} />
           <Route path="/if/register" element={<InfluencerRegisterPage />} />
