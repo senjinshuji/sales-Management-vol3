@@ -401,11 +401,34 @@ function LeadSourceMasterPage() {
 
       if (editingSource) {
         // 更新
+        const newName = formData.name.trim();
+        const oldName = editingSource.name;
         console.log('🔄 流入経路更新開始:', editingSource.id);
         await updateDoc(doc(db, 'leadSources', editingSource.id), {
-          name: formData.name.trim(),
+          name: newName,
           updatedAt: serverTimestamp()
         });
+
+        // 名前変更時は過去データのleadSourceも一括更新
+        if (newName !== oldName) {
+          console.log('🔄 過去データのleadSource一括更新:', oldName, '→', newName);
+
+          // progressDashboardの更新
+          const progressQ = query(collection(db, 'progressDashboard'), where('leadSource', '==', oldName));
+          const progressSnap = await getDocs(progressQ);
+          for (const d of progressSnap.docs) {
+            await updateDoc(doc(db, 'progressDashboard', d.id), { leadSource: newName });
+          }
+          console.log(`✅ progressDashboard ${progressSnap.size}件更新`);
+
+          // actionLogsの更新
+          const logsQ = query(collection(db, 'actionLogs'), where('leadSource', '==', oldName));
+          const logsSnap = await getDocs(logsQ);
+          for (const d of logsSnap.docs) {
+            await updateDoc(doc(db, 'actionLogs', d.id), { leadSource: newName });
+          }
+          console.log(`✅ actionLogs ${logsSnap.size}件更新`);
+        }
         console.log('✅ 流入経路更新成功');
       } else {
         // 新規追加
