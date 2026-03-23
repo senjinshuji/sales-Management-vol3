@@ -39,8 +39,8 @@ const calcContinuationStatus = (records, isExistingProject) => {
 
   if (isExistingProject) {
     // 既存案件ボタンから追加された案件
-    // 継続成約: フェーズ8 & startDateが未来（レコード件数不問）
-    if (isPhase8 && startDate && startDate > today) {
+    // 継続成約: フェーズ8 & (startDateが未来 or 空)
+    if (isPhase8 && (!startDate || startDate > today)) {
       return '継続成約';
     }
     // 終了: フェーズ8 & endDateが過去
@@ -61,8 +61,8 @@ const calcContinuationStatus = (records, isExistingProject) => {
     }
   } else {
     // 新規側から追加された案件
-    // 新規成約: フェーズ8 & startDateが未来
-    if (isPhase8 && startDate && startDate > today) {
+    // 新規成約: フェーズ8 & (startDateが未来 or 空)
+    if (isPhase8 && (!startDate || startDate > today)) {
       return '新規成約';
     }
     // 終了: フェーズ8 & endDateが過去
