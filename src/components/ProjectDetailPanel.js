@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { FiX, FiPlus, FiTrash2, FiEdit2, FiSend, FiChevronDown, FiChevronRight, FiExternalLink, FiCheck } from 'react-icons/fi';
 import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { PROJECT_RANKS, STATUSES, STATUS_COLORS, CONTINUATION_STATUS_COLORS } from '../data/constants.js';
+import { PROJECT_RANKS, STATUSES, STATUS_COLORS, CONTINUATION_STATUS_COLORS, PHASE_DESCRIPTIONS } from '../data/constants.js';
+import PhaseTooltip from './PhaseTooltip.js';
 import { linkifyText } from '../utils/linkify.js';
 import { db } from '../firebase.js';
 import { collection, getDocs, Timestamp } from 'firebase/firestore';
@@ -260,8 +261,9 @@ const ActionInput = styled.textarea`
   border-radius: 4px;
   font-size: 0.875rem;
   resize: none;
-  overflow: hidden;
+  overflow-y: auto;
   min-height: 60px;
+  max-height: 200px;
   font-family: inherit;
   box-sizing: border-box;
   &:focus { outline: none; border-color: #3498db; }
@@ -271,7 +273,8 @@ const ActionInput = styled.textarea`
 const autoResize = (e) => {
   const el = e.target;
   el.style.height = 'auto';
-  el.style.height = el.scrollHeight + 'px';
+  const maxHeight = parseInt(window.getComputedStyle(el).maxHeight) || Infinity;
+  el.style.height = Math.min(el.scrollHeight, maxHeight) + 'px';
 };
 
 const SendButton = styled.button`
@@ -342,8 +345,9 @@ const EntryEditTextareaBase = styled.textarea`
   border-radius: 4px;
   font-size: 0.85rem;
   box-sizing: border-box;
-  resize: vertical;
-  overflow: hidden;
+  resize: none;
+  overflow-y: auto;
+  max-height: 200px;
   &:focus { outline: none; border-color: #3498db; }
 `;
 
@@ -353,7 +357,11 @@ const EntryEditTextarea = React.forwardRef((props, ref) => (
     {...props}
     rows={1}
     ref={el => {
-      if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
+      if (el) {
+        el.style.height = 'auto';
+        const maxHeight = parseInt(window.getComputedStyle(el).maxHeight) || Infinity;
+        el.style.height = Math.min(el.scrollHeight, maxHeight) + 'px';
+      }
       if (typeof ref === 'function') ref(el);
       else if (ref) ref.current = el;
     }}
@@ -1135,6 +1143,7 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
       }
     } catch (error) {
       console.error('Failed to add sales entry:', error);
+      alert('メモの保存に失敗しました');
     }
   };
 
@@ -1245,6 +1254,7 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
       await loadEntries();
     } catch (error) {
       console.error('Failed to update group entries:', error);
+      alert('メモの保存に失敗しました');
     }
   };
 
@@ -2232,7 +2242,7 @@ const SalesTab = ({ project, operators, salesReps, subCol = 'salesRecords', onPh
           <tr>
             <RecordTh style={{ width: '30px' }}></RecordTh>
             <RecordTh>区分</RecordTh>
-            <RecordTh>フェーズ</RecordTh>
+            <RecordTh>フェーズ<PhaseTooltip /></RecordTh>
             <RecordTh>予算</RecordTh>
             <RecordTh>登録日</RecordTh>
             <RecordTh>営業担当</RecordTh>

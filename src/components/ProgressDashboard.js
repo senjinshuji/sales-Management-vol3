@@ -2,7 +2,8 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import styled from 'styled-components';
 import { FiSearch, FiChevronDown, FiChevronUp, FiPlus, FiTrash2, FiUpload, FiEdit3 } from 'react-icons/fi';
 import { useLocation, useSearchParams } from 'react-router-dom';
-import { STATUS_COLORS, STATUSES } from '../data/constants.js';
+import { STATUS_COLORS, STATUSES, PHASE_DESCRIPTIONS } from '../data/constants.js';
+import PhaseTooltip from './PhaseTooltip.js';
 import { linkifyText } from '../utils/linkify.js';
 import { fetchStaffByRole } from '../services/staffService.js';
 import { db } from '../firebase.js';
@@ -81,8 +82,17 @@ const fetchSalesInfo = async (dealId) => {
       });
     }
 
+    // 最古レコードの「登録日」フィールド(date)を取得（経過日数計算用）
+    let firstRecordDate = null;
+    if (records.length > 0) {
+      const oldest = records[records.length - 1];
+      if (oldest.date) {
+        firstRecordDate = new Date(oldest.date);
+      }
+    }
+
     const naEntry = activeNaEntries[0] || null;
-    return { naEntry, latestPhase, activeNaEntries };
+    return { naEntry, latestPhase, activeNaEntries, firstRecordDate };
   } catch (error) {
     console.error('Failed to fetch sales info:', error);
     return { naEntry: null, latestPhase: null };
@@ -803,10 +813,16 @@ function ProgressDashboard() {
             aVal = (a.companyName || '').toLowerCase();
             bVal = (b.companyName || '').toLowerCase();
             break;
-          case 'elapsedDays':
-            aVal = calcElapsedDays(a.createdAtRaw) || 0;
-            bVal = calcElapsedDays(b.createdAtRaw) || 0;
+          case 'elapsedDays': {
+            const infoAe = naDataMap[a.id] || {};
+            const infoBe = naDataMap[b.id] || {};
+            const phaseA = infoAe.latestPhase || a.status || '';
+            const phaseB = infoBe.latestPhase || b.status || '';
+            // フェーズ8は末尾に配置
+            aVal = phaseA === 'フェーズ8' ? -1 : (calcElapsedDays(infoAe.firstRecordDate || a.createdAtRaw) || 0);
+            bVal = phaseB === 'フェーズ8' ? -1 : (calcElapsedDays(infoBe.firstRecordDate || b.createdAtRaw) || 0);
             return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+          }
           case 'nextActionDate': {
             const infoA = naDataMap[a.id] || {};
             const infoB = naDataMap[b.id] || {};
@@ -861,7 +877,22 @@ function ProgressDashboard() {
         newDeal.introducerId = addForm.introducerId ? parseInt(addForm.introducerId) : 0;
         newDeal.partnerRepresentative = addForm.partnerRepresentative || null;
       }
-      await addDoc(collection(db, 'progressDashboard'), newDeal);
+      const docRef = await addDoc(collection(db, 'progressDashboard'), newDeal);
+
+      // 営業記録を自動作成
+      const today = new Date().toISOString().split('T')[0];
+      await addSalesRecord(docRef.id, {
+        phase: addForm.status || 'フェーズ1',
+        budget: addForm.expectedBudget ? Number(addForm.expectedBudget) : '',
+        salesRep: addForm.representative || '',
+        operatorRep: '',
+        date: today,
+        startDate: '',
+        endDate: '',
+        recordType: '新規',
+        createdAt: new Date()
+      }, 'newCaseSalesRecords');
+
       setShowAddModal(false);
       setAddForm({
         companyName: '', introducer: '', productName: '',
@@ -1256,7 +1287,7 @@ function ProgressDashboard() {
                 <TableHeaderCell>提案予算</TableHeaderCell>
                 <TableHeaderCell>流入経路</TableHeaderCell>
                 <TableHeaderCell>担当者</TableHeaderCell>
-                <TableHeaderCell>ステータス</TableHeaderCell>
+                <TableHeaderCell>フェーズ<PhaseTooltip /></TableHeaderCell>
                 <TableHeaderCell $sortable onClick={() => handleSort('elapsedDays')}>
                   経過日数{renderSortIcon('elapsedDays')}
                 </TableHeaderCell>
@@ -1269,12 +1300,14 @@ function ProgressDashboard() {
             </TableHead>
             <tbody>
               {filteredDeals.map(deal => {
-                const elapsedDays = calcElapsedDays(deal.createdAtRaw);
                 // 営業記録からNA・フェーズを取得（フォールバック: deal直下のフィールド）
                 const salesInfo = naDataMap[deal.id] || {};
                 const naEntry = salesInfo.naEntry;
                 const activeNaEntries = salesInfo.activeNaEntries || [];
                 const displayPhase = salesInfo.latestPhase || deal.status || '';
+                // 経過日数: 最初のレコード登録日から計算（フォールバック: 案件createdAt）
+                const elapsedDays = displayPhase === 'フェーズ8' ? null
+                  : calcElapsedDays(salesInfo.firstRecordDate || deal.createdAtRaw);
                 const latestNaContent = naEntry?.actionContent || '';
                 const latestNaDueDate = naEntry?.actionDueDate || '';
                 return (

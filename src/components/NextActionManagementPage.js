@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import styled, { keyframes } from 'styled-components';
-import { FiX, FiEdit2, FiSend, FiTrash2, FiExternalLink, FiCheck, FiLink } from 'react-icons/fi';
+import { FiX, FiEdit2, FiSend, FiTrash2, FiExternalLink, FiCheck, FiLink, FiPlus } from 'react-icons/fi';
 import { linkifyText } from '../utils/linkify.js';
 import {
   fetchAllNextActions,
@@ -11,7 +11,11 @@ import {
   fetchNaComments,
   updateNaComment,
   deleteNaComment,
-  fetchProjectById
+  fetchProjectById,
+  deleteSalesEntry,
+  addSalesEntry,
+  addSalesRecord,
+  fetchSalesRecords
 } from '../services/projectService.js';
 import { fetchAllStaff } from '../services/staffService.js';
 import ProjectDetailPanel from './ProjectDetailPanel.js';
@@ -170,6 +174,7 @@ const ColumnBody = styled.div`
 // --- カード ---
 
 const Card = styled.div`
+  position: relative;
   background: white;
   border: 1px solid #e0e0e0;
   border-left: 3px solid ${p =>
@@ -610,6 +615,140 @@ const EmptyText = styled.div`
   font-size: 0.85rem;
 `;
 
+// --- NA追加ボタン（カラム末尾） ---
+
+const AddNaButton = styled.button`
+  width: 100%;
+  padding: 0.5rem;
+  border: 2px dashed #ddd;
+  border-radius: 8px;
+  background: transparent;
+  color: #bbb;
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.25rem;
+  &:hover { border-color: #3498db; color: #3498db; }
+`;
+
+// --- NA作成モーダル用 ---
+
+const ProjectListItem = styled.button`
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  background: white;
+  font-size: 0.82rem;
+  color: #2c3e50;
+  cursor: pointer;
+  margin-bottom: 0.4rem;
+  &:hover { background: #ebf5fb; border-color: #3498db; }
+`;
+
+const AddNaTypeButton = styled.button`
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.75rem 1rem;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  background: white;
+  font-size: 0.9rem;
+  color: #2c3e50;
+  cursor: pointer;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  &:hover { background: #ebf5fb; border-color: #3498db; }
+`;
+
+const AddNaFormGroup = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.75rem;
+`;
+
+const AddNaLabel = styled.label`
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #95a5a6;
+`;
+
+const AddNaInput = styled.input`
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  outline: none;
+  &:focus { border-color: #3498db; }
+`;
+
+const AddNaTextarea = styled.textarea`
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  outline: none;
+  resize: vertical;
+  min-height: 80px;
+  font-family: inherit;
+  &:focus { border-color: #3498db; }
+`;
+
+const AddNaSelect = styled.select`
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  outline: none;
+  background: white;
+  &:focus { border-color: #3498db; }
+`;
+
+const DeleteBtn = styled.button`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #bdc3c7;
+  cursor: pointer;
+  &:hover { background: #fde8e8; color: #e74c3c; }
+`;
+
+const CardDeleteBtn = styled.button`
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #ddd;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  ${Card}:hover & { opacity: 1; }
+  &:hover { background: #fde8e8; color: #e74c3c; }
+`;
+
+// ============================================
+// スタンドアロンNA用のダミー案件ID
+// ============================================
+const STANDALONE_NA_PROJECT_ID = '__standalone_na__';
+
 // ============================================
 // コンポーネント
 // ============================================
@@ -643,6 +782,17 @@ const NextActionManagementPage = () => {
 
   // URLコピー済みフラグ
   const [copiedUrl, setCopiedUrl] = useState(false);
+
+  // NA追加モーダル
+  const [addNaModal, setAddNaModal] = useState(null); // { targetStatus }
+  const [addNaStep, setAddNaStep] = useState(1); // 1: 紐付け選択, 2: 案件選択, 3: NA入力
+  const [addNaType, setAddNaType] = useState(null); // 'new' | 'existing' | 'none'
+  const [addNaProjects, setAddNaProjects] = useState([]);
+  const [addNaSelected, setAddNaSelected] = useState(null); // { projectId, recordId, subCol, companyName, productName }
+  const [addNaContent, setAddNaContent] = useState('');
+  const [addNaDueDate, setAddNaDueDate] = useState('');
+  const [addNaAssignee, setAddNaAssignee] = useState('');
+  const [addNaSaving, setAddNaSaving] = useState(false);
 
   // 営業メモパネル（2層目）: { project, mode }
   const [salesPanel, setSalesPanel] = useState(null);
@@ -801,6 +951,147 @@ const NextActionManagementPage = () => {
     const { na } = reviewModal;
     await updateNaStatus(na, STATUS_REVIEWING, { reviewAssignee: staffName });
     setReviewModal(null);
+  };
+
+  // --- NA削除 ---
+
+  const handleDeleteNa = async (na) => {
+    if (!window.confirm('このNAを削除しますか？')) return;
+    try {
+      await deleteSalesEntry(na.projectId, na.recordId, na.id, na.subCol || 'salesRecords');
+      setAllNas(prev => prev.filter(item =>
+        !(item.id === na.id && item.projectId === na.projectId && item.recordId === na.recordId)
+      ));
+      if (selectedNa?.id === na.id) closeDetail();
+    } catch (error) {
+      console.error('Failed to delete NA:', error);
+      alert('NAの削除に失敗しました');
+    }
+  };
+
+  // --- NA追加モーダル ---
+
+  const openAddNaModal = (targetStatus) => {
+    setAddNaModal({ targetStatus });
+    setAddNaStep(1);
+    setAddNaType(null);
+    setAddNaProjects([]);
+    setAddNaSelected(null);
+    setAddNaContent('');
+    setAddNaDueDate('');
+    setAddNaAssignee('');
+  };
+
+  const closeAddNaModal = () => {
+    setAddNaModal(null);
+    setAddNaStep(1);
+    setAddNaType(null);
+    setAddNaProjects([]);
+    setAddNaSelected(null);
+    setAddNaContent('');
+    setAddNaDueDate('');
+    setAddNaAssignee('');
+  };
+
+  const handleSelectAddNaType = async (type) => {
+    setAddNaType(type);
+    if (type === 'none') {
+      // 商材なし → NA入力へ直接進む
+      setAddNaStep(3);
+      return;
+    }
+    // 案件リストを取得
+    try {
+      const { collection, getDocs } = await import('firebase/firestore');
+      const { db } = await import('../firebase.js');
+      const progressRef = collection(db, 'progressDashboard');
+      const snapshot = await getDocs(progressRef);
+      const projects = snapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
+      }));
+      // 新規 or 既存でフィルタ
+      const filtered = type === 'new'
+        ? projects.filter(p => p.isExistingProject !== true && p.id !== STANDALONE_NA_PROJECT_ID)
+        : projects.filter(p => p.isExistingProject === true && p.id !== STANDALONE_NA_PROJECT_ID);
+      setAddNaProjects(filtered);
+      setAddNaStep(2);
+    } catch (error) {
+      console.error('Failed to fetch projects:', error);
+      alert('案件リストの取得に失敗しました');
+    }
+  };
+
+  const handleSelectProject = async (project) => {
+    try {
+      const subCol = addNaType === 'new' ? 'newCaseSalesRecords' : 'salesRecords';
+      const records = await fetchSalesRecords(project.id, subCol);
+      // createdAtの降順でソートして最新を取得
+      const sorted = records.sort((a, b) => {
+        const aTime = a.createdAt?.toMillis?.() || a.createdAt?.seconds || 0;
+        const bTime = b.createdAt?.toMillis?.() || b.createdAt?.seconds || 0;
+        return bTime - aTime;
+      });
+      if (sorted.length === 0) {
+        alert('この案件には営業記録がありません');
+        return;
+      }
+      setAddNaSelected({
+        projectId: project.id,
+        recordId: sorted[0].id,
+        subCol,
+        companyName: project.companyName || '',
+        productName: project.productName || ''
+      });
+      setAddNaStep(3);
+    } catch (error) {
+      console.error('Failed to fetch records:', error);
+      alert('営業記録の取得に失敗しました');
+    }
+  };
+
+  const handleAddNa = async () => {
+    if (!addNaContent.trim() || !addNaDueDate) return;
+    setAddNaSaving(true);
+    try {
+      const entryData = {
+        memoContent: '',
+        actionContent: addNaContent.trim(),
+        actionDueDate: addNaDueDate,
+        actionAssignee: addNaAssignee,
+        actionStatus: addNaModal.targetStatus,
+      };
+
+      let projectId, recordId, subCol;
+
+      if (addNaType === 'none') {
+        // スタンドアロンNA用のダミー案件
+        projectId = STANDALONE_NA_PROJECT_ID;
+        subCol = 'salesRecords';
+        const records = await fetchSalesRecords(projectId, subCol);
+        if (records.length === 0) {
+          const { serverTimestamp } = await import('firebase/firestore');
+          await addSalesRecord(projectId, { phase: '', date: '', createdAt: serverTimestamp() }, subCol);
+          const newRecords = await fetchSalesRecords(projectId, subCol);
+          recordId = newRecords[0].id;
+        } else {
+          recordId = records[0].id;
+        }
+      } else {
+        projectId = addNaSelected.projectId;
+        recordId = addNaSelected.recordId;
+        subCol = addNaSelected.subCol;
+      }
+
+      await addSalesEntry(projectId, recordId, entryData, subCol);
+      await loadNas();
+      closeAddNaModal();
+    } catch (error) {
+      console.error('Failed to add NA:', error);
+      alert('NAの追加に失敗しました');
+    } finally {
+      setAddNaSaving(false);
+    }
   };
 
   // --- インライン編集 ---
@@ -1047,6 +1338,12 @@ const NextActionManagementPage = () => {
                           onDragEnd={handleDragEnd}
                           onClick={() => openDetail(na)}
                         >
+                          <CardDeleteBtn
+                            onClick={(e) => { e.stopPropagation(); handleDeleteNa(na); }}
+                            title="削除"
+                          >
+                            <FiTrash2 size={12} />
+                          </CardDeleteBtn>
                           <CardContent $done={isDone}>
                             {linkifyText(na.actionContent)}
                           </CardContent>
@@ -1058,7 +1355,9 @@ const NextActionManagementPage = () => {
                                 {dueStatus === 'urgent' && ' 急'}
                               </DueBadge>
                             )}
-                            <span>{na.companyName}{na.productName ? ` / ${na.productName}` : ''}</span>
+                            {na.projectId !== STANDALONE_NA_PROJECT_ID && (
+                              <span>{na.companyName}{na.productName ? ` / ${na.productName}` : ''}</span>
+                            )}
                             {isReviewing && na.reviewAssignee && (
                               <ReviewBadge>レビュー: {na.reviewAssignee}</ReviewBadge>
                             )}
@@ -1071,6 +1370,9 @@ const NextActionManagementPage = () => {
                       );
                     })
                   )}
+                  <AddNaButton onClick={() => openAddNaModal(col.id)} title="NAを追加">
+                    <FiPlus size={16} />
+                  </AddNaButton>
                 </ColumnBody>
               </Column>
             );
@@ -1108,6 +1410,9 @@ const NextActionManagementPage = () => {
                   {copiedUrl ? <FiCheck size={14} /> : <FiLink size={14} />}
                   {copiedUrl ? 'コピー済み' : 'URLをコピー'}
                 </CopyUrlButton>
+                <DeleteBtn onClick={() => handleDeleteNa(selectedNa)} title="削除">
+                  <FiTrash2 size={16} />
+                </DeleteBtn>
                 <CloseButton onClick={closeDetail}><FiX size={18} /></CloseButton>
               </div>
             </PanelHeader>
@@ -1165,13 +1470,15 @@ const NextActionManagementPage = () => {
                 </DetailField>
               )}
 
-              {/* 案件情報 */}
-              <DetailField>
-                <DetailLabel>案件情報</DetailLabel>
-                <DetailValue>
-                  {selectedNa.companyName}{selectedNa.productName ? ` / ${selectedNa.productName}` : ''}
-                </DetailValue>
-              </DetailField>
+              {/* 案件情報（スタンドアロンNAでは非表示） */}
+              {selectedNa.projectId !== STANDALONE_NA_PROJECT_ID && (
+                <DetailField>
+                  <DetailLabel>案件情報</DetailLabel>
+                  <DetailValue>
+                    {selectedNa.companyName}{selectedNa.productName ? ` / ${selectedNa.productName}` : ''}
+                  </DetailValue>
+                </DetailField>
+              )}
 
               {/* 担当者 */}
               {selectedNa.actionAssignee && (
@@ -1181,11 +1488,13 @@ const NextActionManagementPage = () => {
                 </DetailField>
               )}
 
-              {/* 営業メモを開く */}
-              <NavigateButton onClick={openSalesPanel}>
-                <FiExternalLink size={14} />
-                営業メモを開く
-              </NavigateButton>
+              {/* 営業メモを開く（スタンドアロンNAでは非表示） */}
+              {selectedNa.projectId !== STANDALONE_NA_PROJECT_ID && (
+                <NavigateButton onClick={openSalesPanel}>
+                  <FiExternalLink size={14} />
+                  営業メモを開く
+                </NavigateButton>
+              )}
 
               {/* コメント欄 */}
               <CommentsSection>
@@ -1251,6 +1560,111 @@ const NextActionManagementPage = () => {
             </PanelBody>
           </DetailPanel>
         </>
+      )}
+
+      {/* NA追加モーダル */}
+      {addNaModal && (
+        <ModalOverlay onClick={closeAddNaModal}>
+          <ModalBox onClick={e => e.stopPropagation()} style={{ width: addNaStep === 2 ? '440px' : '360px' }}>
+            {/* ステップ1: 紐付け選択 */}
+            {addNaStep === 1 && (
+              <>
+                <ModalTitle>NAを追加</ModalTitle>
+                <AddNaTypeButton onClick={() => handleSelectAddNaType('new')}>
+                  新規案件に紐付け
+                </AddNaTypeButton>
+                <AddNaTypeButton onClick={() => handleSelectAddNaType('existing')}>
+                  既存案件に紐付け
+                </AddNaTypeButton>
+                <AddNaTypeButton onClick={() => handleSelectAddNaType('none')}>
+                  商材なし（紐付けなし）
+                </AddNaTypeButton>
+                <ModalCancelBtn onClick={closeAddNaModal}>キャンセル</ModalCancelBtn>
+              </>
+            )}
+
+            {/* ステップ2: 案件選択 */}
+            {addNaStep === 2 && (
+              <>
+                <ModalTitle>{addNaType === 'new' ? '新規案件を選択' : '既存案件を選択'}</ModalTitle>
+                <div style={{ maxHeight: '50vh', overflowY: 'auto', marginBottom: '0.5rem' }}>
+                  {addNaProjects.length === 0 ? (
+                    <EmptyText>該当する案件がありません</EmptyText>
+                  ) : (
+                    addNaProjects.map(project => (
+                      <ProjectListItem key={project.id} onClick={() => handleSelectProject(project)}>
+                        {project.companyName || '(会社名なし)'}
+                        {project.productName ? ` / ${project.productName}` : ''}
+                        {project.agencyName ? ` / ${project.agencyName}` : ''}
+                      </ProjectListItem>
+                    ))
+                  )}
+                </div>
+                <ModalCancelBtn onClick={() => setAddNaStep(1)}>戻る</ModalCancelBtn>
+              </>
+            )}
+
+            {/* ステップ3: NA入力 */}
+            {addNaStep === 3 && (
+              <>
+                <ModalTitle>NA内容を入力</ModalTitle>
+                {addNaSelected && (
+                  <div style={{ fontSize: '0.8rem', color: '#7f8c8d', marginBottom: '0.75rem', padding: '0.4rem 0.6rem', background: '#f7f8fa', borderRadius: '4px' }}>
+                    {addNaSelected.companyName}{addNaSelected.productName ? ` / ${addNaSelected.productName}` : ''}
+                  </div>
+                )}
+                {addNaType === 'none' && (
+                  <div style={{ fontSize: '0.8rem', color: '#7f8c8d', marginBottom: '0.75rem', padding: '0.4rem 0.6rem', background: '#f7f8fa', borderRadius: '4px' }}>
+                    商材なし
+                  </div>
+                )}
+                <AddNaFormGroup>
+                  <AddNaLabel>NA内容 *</AddNaLabel>
+                  <AddNaTextarea
+                    value={addNaContent}
+                    onChange={e => setAddNaContent(e.target.value)}
+                    placeholder="ネクストアクションの内容を入力"
+                    autoFocus
+                  />
+                </AddNaFormGroup>
+                <AddNaFormGroup>
+                  <AddNaLabel>期日 *</AddNaLabel>
+                  <AddNaInput
+                    type="date"
+                    value={addNaDueDate}
+                    onChange={e => setAddNaDueDate(e.target.value)}
+                  />
+                </AddNaFormGroup>
+                <AddNaFormGroup>
+                  <AddNaLabel>担当者</AddNaLabel>
+                  <AddNaSelect
+                    value={addNaAssignee}
+                    onChange={e => setAddNaAssignee(e.target.value)}
+                  >
+                    <option value="">選択してください</option>
+                    {staffList.filter(s => s.role === 'sales').map(staff => (
+                      <option key={staff.id} value={staff.name}>{staff.name}</option>
+                    ))}
+                  </AddNaSelect>
+                </AddNaFormGroup>
+                <SaveButton
+                  onClick={handleAddNa}
+                  disabled={!addNaContent.trim() || !addNaDueDate || addNaSaving}
+                  style={{ width: '100%', textAlign: 'center', padding: '0.6rem' }}
+                >
+                  {addNaSaving ? '保存中...' : '保存'}
+                </SaveButton>
+                <ModalCancelBtn onClick={() => {
+                  if (addNaType === 'none') {
+                    setAddNaStep(1);
+                  } else {
+                    setAddNaStep(2);
+                  }
+                }}>戻る</ModalCancelBtn>
+              </>
+            )}
+          </ModalBox>
+        </ModalOverlay>
       )}
 
       {/* 営業メモパネル（2層目：NA詳細の上に重ねる） */}
