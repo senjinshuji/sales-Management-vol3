@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom';
 import styled, { keyframes } from 'styled-components';
 import { FiX, FiEdit2, FiSend, FiTrash2, FiExternalLink, FiCheck, FiLink } from 'react-icons/fi';
+import { linkifyText } from '../utils/linkify.js';
 import {
   fetchAllNextActions,
   updateSalesEntryStatus,
@@ -1047,7 +1048,7 @@ const NextActionManagementPage = () => {
                           onClick={() => openDetail(na)}
                         >
                           <CardContent $done={isDone}>
-                            {na.actionContent}
+                            {linkifyText(na.actionContent)}
                           </CardContent>
                           <CardMeta>
                             {na.actionDueDate && (
@@ -1124,7 +1125,7 @@ const NextActionManagementPage = () => {
                   />
                 ) : (
                   <EditableValue onClick={() => { setDetailContent(selectedNa.actionContent || ''); setEditingField('content'); }}>
-                    {selectedNa.actionContent || '（未入力）'}
+                    {selectedNa.actionContent ? linkifyText(selectedNa.actionContent) : '（未入力）'}
                   </EditableValue>
                 )}
               </DetailField>

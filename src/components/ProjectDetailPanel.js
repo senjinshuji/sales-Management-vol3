@@ -3,6 +3,7 @@ import styled, { keyframes } from 'styled-components';
 import { FiX, FiPlus, FiTrash2, FiEdit2, FiSend, FiChevronDown, FiChevronRight, FiExternalLink, FiCheck } from 'react-icons/fi';
 import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { PROJECT_RANKS, STATUSES, STATUS_COLORS, CONTINUATION_STATUS_COLORS } from '../data/constants.js';
+import { linkifyText } from '../utils/linkify.js';
 import { db } from '../firebase.js';
 import { collection, getDocs, Timestamp } from 'firebase/firestore';
 import { fetchAllStaff } from '../services/staffService.js';
@@ -738,7 +739,7 @@ const OperationMemoSection = ({ projectId }) => {
               </>
             ) : (
               <>
-                <ActionContent>{memo.content}</ActionContent>
+                <ActionContent>{linkifyText(memo.content)}</ActionContent>
                 <ActionMeta>{formatTimestamp(memo.createdAt)}</ActionMeta>
                 <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end', marginTop: '0.25rem' }}>
                   <EditButton onClick={() => setEditingMemo({ id: memo.id, content: memo.content })}>
@@ -1689,7 +1690,7 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
                     {firstEntry.memoContent && (
                       <SubSection style={{ marginBottom: '0.75rem' }}>
                         <SubSectionTitle style={{ margin: '0 0 0.25rem' }}>接触メモ</SubSectionTitle>
-                        <ActionContent>{firstEntry.memoContent}</ActionContent>
+                        <ActionContent>{linkifyText(firstEntry.memoContent)}</ActionContent>
                       </SubSection>
                     )}
 
@@ -1742,7 +1743,7 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
                           textDecoration: entry.actionStatus === 'done' ? 'line-through' : 'none',
                           opacity: entry.actionStatus === 'done' ? 0.6 : 1
                         }}>
-                          {entry.actionContent}
+                          {linkifyText(entry.actionContent)}
                         </ActionContent>
                       </SubSection>
                     ))}
@@ -1908,7 +1909,7 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
                   {entry.memoContent && (
                     <SubSection style={{ marginBottom: entry.actionContent ? '0.75rem' : '0' }}>
                       <SubSectionTitle style={{ margin: '0 0 0.25rem' }}>接触メモ</SubSectionTitle>
-                      <ActionContent>{entry.memoContent}</ActionContent>
+                      <ActionContent>{linkifyText(entry.memoContent)}</ActionContent>
                     </SubSection>
                   )}
 
@@ -1961,7 +1962,7 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
                         textDecoration: entry.actionStatus === 'done' ? 'line-through' : 'none',
                         opacity: entry.actionStatus === 'done' ? 0.6 : 1
                       }}>
-                        {entry.actionContent}
+                        {linkifyText(entry.actionContent)}
                       </ActionContent>
                     </SubSection>
                   )}
@@ -2018,7 +2019,7 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
               <div>
                 <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#95a5a6', textTransform: 'uppercase' }}>NA内容</span>
                 <div style={{ fontSize: '0.9rem', color: '#2c3e50', whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginTop: '0.2rem' }}>
-                  {naDetailEntry.actionContent}
+                  {linkifyText(naDetailEntry.actionContent)}
                 </div>
               </div>
               {/* 期日 */}
@@ -2077,7 +2078,7 @@ const SalesRecordEntries = ({ projectId, record, onPhaseUpdate, onRecordFieldCha
                         <button onClick={() => setNaEditingCommentId(null)} style={{ border: 'none', background: 'transparent', color: '#bdc3c7', cursor: 'pointer' }}><FiX size={14} /></button>
                       </div>
                     ) : (
-                      <div style={{ fontSize: '0.85rem', color: '#2c3e50', whiteSpace: 'pre-wrap', marginTop: '0.15rem' }}>{c.content}</div>
+                      <div style={{ fontSize: '0.85rem', color: '#2c3e50', whiteSpace: 'pre-wrap', marginTop: '0.15rem' }}>{linkifyText(c.content)}</div>
                     )}
                   </div>
                 ))}

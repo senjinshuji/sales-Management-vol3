@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { FiSearch, FiChevronDown, FiChevronUp, FiPlus, FiTrash2, FiUpload, FiEdit3 } from 'react-icons/fi';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { STATUS_COLORS, STATUSES } from '../data/constants.js';
+import { linkifyText } from '../utils/linkify.js';
 import { fetchStaffByRole } from '../services/staffService.js';
 import { db } from '../firebase.js';
 import { collection, query, orderBy, getDocs, deleteDoc, doc, updateDoc, serverTimestamp, addDoc, setDoc } from 'firebase/firestore';
@@ -1327,7 +1328,7 @@ function ProgressDashboard() {
                                     [{naEntry.actionDueDate}]
                                   </span>
                                 )}
-                                {truncated}
+                                {linkifyText(truncated)}
                                 {text.length > NA_TRUNCATE_LENGTH && (
                                   <MoreLink onClick={(e) => { e.stopPropagation(); setNaModalText(text); }}>
                                     続きを見る
@@ -1376,7 +1377,7 @@ function ProgressDashboard() {
         <NaModal onClick={() => setNaModalText(null)}>
           <NaModalContent onClick={(e) => e.stopPropagation()}>
             <NaModalTitle>ネクストアクション</NaModalTitle>
-            <NaModalText>{naModalText}</NaModalText>
+            <NaModalText>{linkifyText(naModalText)}</NaModalText>
             <NaModalClose onClick={() => setNaModalText(null)}>閉じる</NaModalClose>
           </NaModalContent>
         </NaModal>
