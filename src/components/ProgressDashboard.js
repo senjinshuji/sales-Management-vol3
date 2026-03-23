@@ -893,6 +893,38 @@ function ProgressDashboard() {
         createdAt: new Date()
       }, 'newCaseSalesRecords');
 
+      // フェーズ8の場合は既存側にも別レコードを作成（CSV取込と同じ処理）
+      if ((addForm.status || 'フェーズ1') === 'フェーズ8') {
+        const existingDeal = {
+          companyName: addForm.companyName.trim(),
+          introducer: addForm.introducer.trim(),
+          productName: addForm.productName.trim(),
+          leadSource: addForm.leadSource,
+          representative: addForm.representative,
+          status: 'フェーズ8',
+          expectedBudget: addForm.expectedBudget ? Number(addForm.expectedBudget) : null,
+          rank: addForm.rank || '',
+          isExistingProject: true,
+          confirmedDate: today,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        };
+        if (addForm.leadSource === 'パートナー') {
+          existingDeal.introducerId = addForm.introducerId ? parseInt(addForm.introducerId) : 0;
+          existingDeal.partnerRepresentative = addForm.partnerRepresentative || null;
+        }
+        const existingRef = await addDoc(collection(db, 'progressDashboard'), existingDeal);
+        await addSalesRecord(existingRef.id, {
+          phase: 'フェーズ8',
+          budget: addForm.expectedBudget ? Number(addForm.expectedBudget) : 0,
+          date: today,
+          salesRep: addForm.representative || '',
+          operatorRep: '',
+          recordType: '新規',
+          createdAt: new Date()
+        });
+      }
+
       setShowAddModal(false);
       setAddForm({
         companyName: '', introducer: '', productName: '',

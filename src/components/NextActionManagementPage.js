@@ -15,7 +15,8 @@ import {
   deleteSalesEntry,
   addSalesEntry,
   addSalesRecord,
-  fetchSalesRecords
+  fetchSalesRecords,
+  ensureStandaloneNaProject
 } from '../services/projectService.js';
 import { fetchAllStaff } from '../services/staffService.js';
 import ProjectDetailPanel from './ProjectDetailPanel.js';
@@ -747,7 +748,7 @@ const CardDeleteBtn = styled.button`
 // ============================================
 // スタンドアロンNA用のダミー案件ID
 // ============================================
-const STANDALONE_NA_PROJECT_ID = '__standalone_na__';
+const STANDALONE_NA_PROJECT_ID = 'standalone-na';
 
 // ============================================
 // コンポーネント
@@ -793,6 +794,7 @@ const NextActionManagementPage = () => {
   const [addNaDueDate, setAddNaDueDate] = useState('');
   const [addNaAssignee, setAddNaAssignee] = useState('');
   const [addNaSaving, setAddNaSaving] = useState(false);
+  const [addNaSearchTerm, setAddNaSearchTerm] = useState('');
 
   // 営業メモパネル（2層目）: { project, mode }
   const [salesPanel, setSalesPanel] = useState(null);
@@ -991,6 +993,7 @@ const NextActionManagementPage = () => {
     setAddNaContent('');
     setAddNaDueDate('');
     setAddNaAssignee('');
+    setAddNaSearchTerm('');
   };
 
   const handleSelectAddNaType = async (type) => {
@@ -1010,10 +1013,10 @@ const NextActionManagementPage = () => {
         id: docSnap.id,
         ...docSnap.data()
       }));
-      // 新規 or 既存でフィルタ
+      // 新規 or 既存でフィルタ（会社名なしの案件は除外）
       const filtered = type === 'new'
-        ? projects.filter(p => p.isExistingProject !== true && p.id !== STANDALONE_NA_PROJECT_ID)
-        : projects.filter(p => p.isExistingProject === true && p.id !== STANDALONE_NA_PROJECT_ID);
+        ? projects.filter(p => p.isExistingProject !== true && p.id !== STANDALONE_NA_PROJECT_ID && p.companyName)
+        : projects.filter(p => p.isExistingProject === true && p.id !== STANDALONE_NA_PROJECT_ID && p.companyName);
       setAddNaProjects(filtered);
       setAddNaStep(2);
     } catch (error) {
@@ -1068,6 +1071,10 @@ const NextActionManagementPage = () => {
         // スタンドアロンNA用のダミー案件
         projectId = STANDALONE_NA_PROJECT_ID;
         subCol = 'salesRecords';
+
+        // 親ドキュメントを確保（fetchAllNextActionsで検出するため必須）
+        await ensureStandaloneNaProject(projectId);
+
         const records = await fetchSalesRecords(projectId, subCol);
         if (records.length === 0) {
           const { serverTimestamp } = await import('firebase/firestore');
@@ -1587,20 +1594,40 @@ const NextActionManagementPage = () => {
             {addNaStep === 2 && (
               <>
                 <ModalTitle>{addNaType === 'new' ? '新規案件を選択' : '既存案件を選択'}</ModalTitle>
+                <input
+                  type="text"
+                  placeholder="会社名・商材名で検索"
+                  value={addNaSearchTerm}
+                  onChange={e => setAddNaSearchTerm(e.target.value)}
+                  autoFocus
+                  style={{
+                    width: '100%', padding: '0.5rem 0.7rem', marginBottom: '0.5rem',
+                    border: '1px solid #ddd', borderRadius: '4px', fontSize: '0.85rem',
+                    boxSizing: 'border-box'
+                  }}
+                />
                 <div style={{ maxHeight: '50vh', overflowY: 'auto', marginBottom: '0.5rem' }}>
-                  {addNaProjects.length === 0 ? (
-                    <EmptyText>該当する案件がありません</EmptyText>
-                  ) : (
-                    addNaProjects.map(project => (
-                      <ProjectListItem key={project.id} onClick={() => handleSelectProject(project)}>
-                        {project.companyName || '(会社名なし)'}
-                        {project.productName ? ` / ${project.productName}` : ''}
-                        {project.agencyName ? ` / ${project.agencyName}` : ''}
-                      </ProjectListItem>
-                    ))
-                  )}
+                  {(() => {
+                    const term = addNaSearchTerm.toLowerCase();
+                    const filtered = addNaProjects.filter(p =>
+                      !term ||
+                      (p.companyName || '').toLowerCase().includes(term) ||
+                      (p.productName || '').toLowerCase().includes(term)
+                    );
+                    return filtered.length === 0 ? (
+                      <EmptyText>該当する案件がありません</EmptyText>
+                    ) : (
+                      filtered.map(project => (
+                        <ProjectListItem key={project.id} onClick={() => handleSelectProject(project)}>
+                          {project.companyName || '(会社名なし)'}
+                          {project.productName ? ` / ${project.productName}` : ''}
+                          {project.agencyName ? ` / ${project.agencyName}` : ''}
+                        </ProjectListItem>
+                      ))
+                    );
+                  })()}
                 </div>
-                <ModalCancelBtn onClick={() => setAddNaStep(1)}>戻る</ModalCancelBtn>
+                <ModalCancelBtn onClick={() => { setAddNaStep(1); setAddNaSearchTerm(''); }}>戻る</ModalCancelBtn>
               </>
             )}
 

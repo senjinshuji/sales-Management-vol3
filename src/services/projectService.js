@@ -219,6 +219,25 @@ export const saveMonthlyData = async (projectId, month, data) => {
 };
 
 /**
+ * スタンドアロンNA用の親ドキュメントを確保する
+ * fetchAllNextActionsで検出するために親ドキュメントが必要
+ * @param {string} projectId - スタンドアロンNA用案件ID
+ */
+export const ensureStandaloneNaProject = async (projectId) => {
+  try {
+    const projectRef = doc(db, 'progressDashboard', projectId);
+    await setDoc(projectRef, {
+      companyName: '商材なし',
+      productName: '',
+      isStandaloneNa: true
+    }, { merge: true });
+  } catch (error) {
+    console.error('Failed to ensure standalone NA project:', error);
+    throw error;
+  }
+};
+
+/**
  * 営業記録を追加する
  * @param {string} projectId - 案件ID
  * @param {object} data - 営業記録データ
