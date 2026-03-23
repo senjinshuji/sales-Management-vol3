@@ -199,6 +199,7 @@ const TableCell = styled.td`
   font-size: 0.85rem;
   color: #2c3e50;
   vertical-align: middle;
+  white-space: nowrap;
 `;
 
 
