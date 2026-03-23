@@ -690,7 +690,7 @@ const ProjectManagementPage = () => {
       <PageHeader>
         <Title>既存案件</Title>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <AddButton onClick={() => setShowCsvGuide(true)}>
+          <AddButton style={{ background: '#2ecc71' }} onClick={() => setShowCsvGuide(true)}>
             <FiUpload size={14} />CSV取込
           </AddButton>
           <AddButton onClick={() => setShowAddModal(true)}>

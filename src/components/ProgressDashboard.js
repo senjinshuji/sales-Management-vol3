@@ -1181,7 +1181,7 @@ function ProgressDashboard() {
       <PageHeader>
         <Title>新規案件一覧</Title>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <AddButton onClick={() => setShowCsvGuide(true)}>
+          <AddButton style={{ background: '#2ecc71' }} onClick={() => setShowCsvGuide(true)}>
             <FiUpload size={14} />CSV取込
           </AddButton>
           <AddButton onClick={() => setShowAddModal(true)}>
