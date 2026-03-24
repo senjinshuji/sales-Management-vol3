@@ -96,10 +96,12 @@ const calcElapsedDays = (records) => {
   return diff;
 };
 
-/** 累計予算（全営業記録のbudget合計） */
+/** 累計予算（フェーズ8の営業記録のbudget合計） */
 const calcTotalSales = (records) => {
   if (!records || records.length === 0) return 0;
-  return records.reduce((sum, r) => sum + (Number(r.budget) || 0), 0);
+  return records
+    .filter(r => r.phase === 'フェーズ8')
+    .reduce((sum, r) => sum + (Number(r.budget) || 0), 0);
 };
 
 // ============================================
