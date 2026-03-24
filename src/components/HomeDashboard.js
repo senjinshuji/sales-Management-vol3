@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import styled from 'styled-components';
-import { FiTarget, FiTrendingUp, FiBarChart, FiUsers, FiAlertTriangle, FiPieChart, FiEdit2, FiDollarSign, FiUser } from 'react-icons/fi';
+import { FiTarget, FiTrendingUp, FiBarChart, FiUsers, FiEdit2, FiDollarSign, FiUser } from 'react-icons/fi';
 import { db } from '../firebase.js';
 import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
 import { STATUSES, STATUS_COLORS, PROPOSAL_MENUS, SALES_REPRESENTATIVES } from '../data/constants.js';
@@ -605,26 +605,24 @@ const FunnelValue = styled.div`
 function HomeDashboard() {
   const location = useLocation();
   const [isLoading, setIsLoading] = useState(true);
-  const [deals, setDeals] = useState([]);
-  const [quarterTarget, setQuarterTarget] = useState(10000000); // デフォルト目標値
+  const [deals, setDeals] = useState([]); // 新規+既存の全案件
+  const [newQuarterTarget, setNewQuarterTarget] = useState(10000000); // 新規目標値
+  const [existingQuarterTarget, setExistingQuarterTarget] = useState(5000000); // 既存目標値
   const [selectedRepresentative, setSelectedRepresentative] = useState(''); // 担当者サマリー用
 
   // 計算結果のstate
-  const [quarterActual, setQuarterActual] = useState(0);
+  const [quarterActualNew, setQuarterActualNew] = useState(0); // 新規四半期実績
+  const [quarterActualExisting, setQuarterActualExisting] = useState(0); // 既存四半期実績
   const [quarterForecast, setQuarterForecast] = useState([]);
   const [quarterlyPersonalSales, setQuarterlyPersonalSales] = useState([]); // 個人四半期売上
-  const [monthActual, setMonthActual] = useState(0); // チーム全体月間売上
-  const [quarterMonthlyActual, setQuarterMonthlyActual] = useState([]); // 四半期内の月別売上
+  const [quarterMonthlyActual, setQuarterMonthlyActual] = useState([]); // 四半期内の月別売上（新規+既存）
   const [monthlyPersonalSales, setMonthlyPersonalSales] = useState([]);
   const [monthForecast, setMonthForecast] = useState([]);
-  const [stagnantDeals, setStagnantDeals] = useState([]);
-  const [menuStats, setMenuStats] = useState([]);
-  const [companyStats, setCompanyStats] = useState([]);
-  const [leadSourceByService, setLeadSourceByService] = useState({}); // サービスごとの流入経路
 
   // 目標編集モーダル用state
   const [showTargetModal, setShowTargetModal] = useState(false);
-  const [editingTarget, setEditingTarget] = useState('');
+  const [editingNewTarget, setEditingNewTarget] = useState('');
+  const [editingExistingTarget, setEditingExistingTarget] = useState('');
 
   // 四半期のキーを取得（目標値保存用）
   const getQuarterKey = () => {
@@ -634,15 +632,21 @@ function HomeDashboard() {
     return `${year}-Q${Math.ceil(startMonth / 3)}`;
   };
 
-  // 目標値をFirestoreから取得
+  // 新規・既存の目標値をFirestoreから取得
   const fetchTarget = useCallback(async () => {
     try {
       const quarterKey = getQuarterKey();
-      const targetRef = doc(db, 'salesTargets', quarterKey);
-      const targetDoc = await getDoc(targetRef);
-
-      if (targetDoc.exists()) {
-        setQuarterTarget(targetDoc.data().target || 10000000);
+      // 新規目標
+      const newTargetRef = doc(db, 'salesTargets', quarterKey);
+      const newTargetDoc = await getDoc(newTargetRef);
+      if (newTargetDoc.exists()) {
+        setNewQuarterTarget(newTargetDoc.data().target || 10000000);
+      }
+      // 既存目標
+      const existingTargetRef = doc(db, 'salesTargets', `${quarterKey}-existing`);
+      const existingTargetDoc = await getDoc(existingTargetRef);
+      if (existingTargetDoc.exists()) {
+        setExistingQuarterTarget(existingTargetDoc.data().target || 5000000);
       }
     } catch (error) {
       console.error('目標値取得エラー:', error);
@@ -653,15 +657,20 @@ function HomeDashboard() {
   const saveTarget = async () => {
     try {
       const quarterKey = getQuarterKey();
-      const targetRef = doc(db, 'salesTargets', quarterKey);
-      const targetValue = parseInt(editingTarget) || 0;
+      const newTargetValue = parseInt(editingNewTarget) || 0;
+      const existingTargetValue = parseInt(editingExistingTarget) || 0;
 
-      await setDoc(targetRef, {
-        target: targetValue,
+      await setDoc(doc(db, 'salesTargets', quarterKey), {
+        target: newTargetValue,
+        updatedAt: new Date()
+      });
+      await setDoc(doc(db, 'salesTargets', `${quarterKey}-existing`), {
+        target: existingTargetValue,
         updatedAt: new Date()
       });
 
-      setQuarterTarget(targetValue);
+      setNewQuarterTarget(newTargetValue);
+      setExistingQuarterTarget(existingTargetValue);
       setShowTargetModal(false);
       alert('目標値を保存しました');
     } catch (error) {
@@ -672,7 +681,8 @@ function HomeDashboard() {
 
   // 目標編集モーダルを開く
   const openTargetModal = () => {
-    setEditingTarget(quarterTarget.toString());
+    setEditingNewTarget(newQuarterTarget.toString());
+    setEditingExistingTarget(existingQuarterTarget.toString());
     setShowTargetModal(true);
   };
 
@@ -692,10 +702,9 @@ function HomeDashboard() {
         });
       });
 
-      // 既存案件側の複製レコードを除外（新規側を正とする）
-      const filteredDeals = dealsList.filter(d => d.isExistingProject !== true);
-      setDeals(filteredDeals);
-      calculateStats(filteredDeals);
+      // 合算ダッシュボード：新規+既存の全案件を使用
+      setDeals(dealsList);
+      calculateStats(dealsList);
     } catch (error) {
       console.error('データ取得エラー:', error);
     } finally {
@@ -709,17 +718,24 @@ function HomeDashboard() {
     const currentMonth = getCurrentMonthRange();
     const now = new Date();
 
-    // 1. 四半期実績（フェーズ8の案件の確定金額）
-    let quarterTotal = 0;
+    // 1. 四半期実績（新規・既存を分けて集計）
+    let quarterTotalNew = 0;
+    let quarterTotalExisting = 0;
     dealsList.forEach(deal => {
       if (deal.status === 'フェーズ8' && deal.confirmedDate) {
         const confirmedDate = new Date(deal.confirmedDate);
         if (confirmedDate >= quarter.start && confirmedDate <= quarter.end) {
-          quarterTotal += deal.receivedOrderAmount || 0;
+          const amount = deal.receivedOrderAmount || 0;
+          if (deal.isExistingProject === true) {
+            quarterTotalExisting += amount;
+          } else {
+            quarterTotalNew += amount;
+          }
         }
       }
     });
-    setQuarterActual(quarterTotal);
+    setQuarterActualNew(quarterTotalNew);
+    setQuarterActualExisting(quarterTotalExisting);
 
     // 2. 四半期売上見込み（担当者別）- フェーズ8は100%、失注以外を含む
     const repForecast = {};
@@ -782,19 +798,7 @@ function HomeDashboard() {
     })).sort((a, b) => b.amount - a.amount);
     setMonthlyPersonalSales(monthlySalesData);
 
-    // 3.25. チーム全体月間売上（実績）
-    let monthTotal = 0;
-    dealsList.forEach(deal => {
-      if (deal.status === 'フェーズ8' && deal.confirmedDate) {
-        const confirmedDate = new Date(deal.confirmedDate);
-        if (confirmedDate >= currentMonth.start && confirmedDate <= currentMonth.end) {
-          monthTotal += deal.receivedOrderAmount || 0;
-        }
-      }
-    });
-    setMonthActual(monthTotal);
-
-    // 3.26. 四半期内の月別売上（棒グラフ用）
+    // 3.26. 四半期内の月別売上（積み上げ棒グラフ用：新規+既存）
     const quarterMonths = [];
     const currentMonthIndex = now.getMonth();
     for (let i = 0; i < 3; i++) {
@@ -804,19 +808,27 @@ function HomeDashboard() {
       const monthLabel = `${monthIndex + 1}月`;
       const isCurrentMonth = monthIndex === currentMonthIndex;
 
-      let monthSales = 0;
+      let newSales = 0;
+      let existingSales = 0;
       dealsList.forEach(deal => {
         if (deal.status === 'フェーズ8' && deal.confirmedDate) {
           const confirmedDate = new Date(deal.confirmedDate);
           if (confirmedDate >= monthStart && confirmedDate <= monthEnd) {
-            monthSales += deal.receivedOrderAmount || 0;
+            const amount = deal.receivedOrderAmount || 0;
+            if (deal.isExistingProject === true) {
+              existingSales += amount;
+            } else {
+              newSales += amount;
+            }
           }
         }
       });
 
       quarterMonths.push({
         label: monthLabel,
-        value: monthSales,
+        newValue: newSales,
+        existingValue: existingSales,
+        value: newSales + existingSales,
         isCurrentMonth
       });
     }
@@ -881,112 +893,6 @@ function HomeDashboard() {
       color: colors[index % colors.length]
     })).sort((a, b) => b.value - a.value);
     setMonthForecast(monthForecastData);
-
-    // 5. 滞留商談リスト（90日以上）
-    const stagnant = dealsList
-      .filter(deal => {
-        if (deal.status === 'フェーズ8' || deal.status === '失注') return false;
-        if (!deal.createdAt) return false;
-        const createdDate = deal.createdAt instanceof Date ? deal.createdAt : new Date(deal.createdAt);
-        const daysDiff = Math.floor((now - createdDate) / (1000 * 60 * 60 * 24));
-        return daysDiff >= 90;
-      })
-      .map(deal => {
-        const createdDate = deal.createdAt instanceof Date ? deal.createdAt : new Date(deal.createdAt);
-        const daysDiff = Math.floor((now - createdDate) / (1000 * 60 * 60 * 24));
-        return {
-          id: deal.id,
-          companyName: deal.companyName || deal.productName,
-          proposalMenu: deal.proposalMenu,
-          daysElapsed: daysDiff,
-          expectedBudget: deal.expectedBudget || 0
-        };
-      })
-      .sort((a, b) => b.daysElapsed - a.daysElapsed);
-    setStagnantDeals(stagnant);
-
-    // 6. メニュー別実績（フェーズ8のみ）
-    const menuSales = {};
-    dealsList.forEach(deal => {
-      if (deal.status === 'フェーズ8') {
-        const menu = deal.proposalMenu || 'その他';
-        if (!menuSales[menu]) {
-          menuSales[menu] = 0;
-        }
-        menuSales[menu] += deal.receivedOrderAmount || 0;
-      }
-    });
-
-    const menuColors = ['#3498db', '#e74c3c', '#27ae60', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22'];
-    const menuData = Object.entries(menuSales).map(([name, value], index) => ({
-      label: name,
-      value,
-      color: menuColors[index % menuColors.length]
-    })).sort((a, b) => b.value - a.value);
-    setMenuStats(menuData);
-
-    // 7. 会社別実績（フェーズ8のみ）
-    const companySales = {};
-    dealsList.forEach(deal => {
-      if (deal.status === 'フェーズ8') {
-        const company = deal.introducer || '直営業';
-        if (!companySales[company]) {
-          companySales[company] = 0;
-        }
-        companySales[company] += deal.receivedOrderAmount || 0;
-      }
-    });
-
-    const companyColors = ['#2ecc71', '#3498db', '#9b59b6', '#e74c3c', '#f39c12', '#1abc9c'];
-    const companyData = Object.entries(companySales).map(([name, value], index) => ({
-      label: name,
-      value,
-      color: companyColors[index % companyColors.length]
-    })).sort((a, b) => b.value - a.value);
-    setCompanyStats(companyData);
-
-    // 8. サービスごとの流入経路（売上ベース・フェーズ8のみ）
-    const serviceLeadSource = {};
-    const leadSourceColors = {
-      'テレアポ': '#e74c3c',
-      'リファラル': '#3498db',
-      'パートナー': '#27ae60',
-      'ソーシャル': '#9b59b6',
-      '問い合わせフォーム': '#f39c12',
-      'アップセル': '#1abc9c',
-      'クロスセル': '#e67e22',
-      '未設定': '#95a5a6'
-    };
-
-    dealsList.forEach(deal => {
-      // フェーズ8（成約済み）のみ対象
-      if (deal.status !== 'フェーズ8') return;
-
-      const service = deal.proposalMenu || 'その他';
-      const leadSource = deal.leadSource || '未設定';
-      const amount = deal.receivedOrderAmount || 0;
-
-      if (!serviceLeadSource[service]) {
-        serviceLeadSource[service] = {};
-      }
-      if (!serviceLeadSource[service][leadSource]) {
-        serviceLeadSource[service][leadSource] = 0;
-      }
-      serviceLeadSource[service][leadSource] += amount;
-    });
-
-    // 各サービスの流入経路データを円グラフ用に変換（売上ベース）
-    const serviceLeadSourceData = {};
-    Object.entries(serviceLeadSource).forEach(([service, sources]) => {
-      const total = Object.values(sources).reduce((sum, amount) => sum + amount, 0);
-      serviceLeadSourceData[service] = Object.entries(sources).map(([source, amount]) => ({
-        label: source,
-        value: amount,
-        percentage: total > 0 ? Math.round((amount / total) * 100) : 0,
-        color: leadSourceColors[source] || '#95a5a6'
-      })).sort((a, b) => b.value - a.value);
-    });
-    setLeadSourceByService(serviceLeadSourceData);
 
   }, []);
 
@@ -1078,7 +984,7 @@ function HomeDashboard() {
   return (
     <DashboardContainer>
       <Header>
-        <Title>📊 営業ダッシュボード</Title>
+        <Title>📊 営業ダッシュボード（新規+既存）</Title>
       </Header>
 
       {/* 1行目: 四半期実績 & 月間実績 */}
@@ -1091,11 +997,50 @@ function HomeDashboard() {
               <FiEdit2 size={16} />
             </EditButton>
           </CardTitle>
-          <MeterGauge
-            value={quarterActual}
-            target={quarterTarget}
-            label="目標達成率"
-          />
+          {(() => {
+            const totalTarget = newQuarterTarget + existingQuarterTarget;
+            const totalActual = quarterActualNew + quarterActualExisting;
+            const percentage = totalTarget > 0 ? Math.min((totalActual / totalTarget) * 100, 150) : 0;
+            const displayPercentage = totalTarget > 0 ? Math.round((totalActual / totalTarget) * 100) : 0;
+            const newRatio = totalActual > 0 ? (quarterActualNew / totalActual) * 100 : 50;
+            let color = '#27ae60';
+            if (displayPercentage < 50) color = '#e74c3c';
+            else if (displayPercentage < 80) color = '#f39c12';
+            return (
+              <MeterContainer>
+                <MeterGauge value={totalActual} target={totalTarget} label="目標達成率" />
+                {/* 新規・既存の内訳バー */}
+                <div style={{ width: '100%', maxWidth: '300px', marginTop: '0.5rem' }}>
+                  <div style={{ display: 'flex', height: '24px', borderRadius: '4px', overflow: 'hidden', border: '1px solid #ddd' }}>
+                    {quarterActualNew > 0 && (
+                      <div style={{
+                        width: `${newRatio}%`,
+                        background: '#3498db',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: 'white', fontSize: '0.7rem', fontWeight: 'bold'
+                      }}>
+                        新規
+                      </div>
+                    )}
+                    {quarterActualExisting > 0 && (
+                      <div style={{
+                        width: `${100 - newRatio}%`,
+                        background: '#2ecc71',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: 'white', fontSize: '0.7rem', fontWeight: 'bold'
+                      }}>
+                        既存
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
+                    <span style={{ color: '#3498db' }}>新規: {formatCurrency(quarterActualNew)}</span>
+                    <span style={{ color: '#2ecc71' }}>既存: {formatCurrency(quarterActualExisting)}</span>
+                  </div>
+                </div>
+              </MeterContainer>
+            );
+          })()}
         </Card>
 
         <Card>
@@ -1104,39 +1049,52 @@ function HomeDashboard() {
             四半期内月別売上実績（{quarter.label}）
           </CardTitle>
           <div style={{ padding: '1rem' }}>
-            {/* 棒グラフ */}
+            {/* 積み上げ棒グラフ（新規=青、既存=緑） */}
             <div style={{ display: 'flex', justifyContent: 'center', gap: '1.5rem', marginBottom: '1rem' }}>
               {quarterMonthlyActual.map((month, index) => {
                 const maxValue = Math.max(...quarterMonthlyActual.map(m => m.value), 1);
-                const heightPercent = (month.value / maxValue) * 100;
-                const barHeight = Math.max(heightPercent * 1.5, 15); // 最大150px、最小15px
+                const totalHeight = Math.max((month.value / maxValue) * 150, 15);
+                const newHeight = month.value > 0 ? (month.newValue / month.value) * totalHeight : 0;
+                const existingHeight = month.value > 0 ? (month.existingValue / month.value) * totalHeight : 0;
                 return (
                   <div key={index} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, maxWidth: '120px' }}>
                     <div style={{
                       fontSize: '0.85rem',
                       fontWeight: 'bold',
-                      color: month.isCurrentMonth ? '#27ae60' : '#666',
+                      color: month.isCurrentMonth ? '#2c3e50' : '#666',
                       marginBottom: '0.5rem'
                     }}>
                       {formatCurrency(month.value)}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'flex-end', height: '150px' }}>
-                      <div style={{
-                        width: '60px',
-                        height: `${barHeight}px`,
-                        minHeight: '30px',
-                        background: month.isCurrentMonth
-                          ? 'linear-gradient(180deg, #27ae60 0%, #219a52 100%)'
-                          : 'linear-gradient(180deg, #bdc3c7 0%, #95a5a6 100%)',
-                        borderRadius: '4px 4px 0 0',
-                        boxShadow: month.isCurrentMonth ? '0 2px 8px rgba(39, 174, 96, 0.3)' : 'none',
-                        transition: 'all 0.3s ease'
-                      }} />
+                    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '150px' }}>
+                      {/* 既存（上段・緑） */}
+                      {existingHeight > 0 && (
+                        <div style={{
+                          width: '60px',
+                          height: `${existingHeight}px`,
+                          background: '#2ecc71',
+                          borderRadius: newHeight > 0 ? '4px 4px 0 0' : '4px 4px 0 0',
+                          transition: 'all 0.3s ease'
+                        }} />
+                      )}
+                      {/* 新規（下段・青） */}
+                      {newHeight > 0 && (
+                        <div style={{
+                          width: '60px',
+                          height: `${newHeight}px`,
+                          background: '#3498db',
+                          borderRadius: existingHeight > 0 ? '0' : '4px 4px 0 0',
+                          transition: 'all 0.3s ease'
+                        }} />
+                      )}
+                      {month.value === 0 && (
+                        <div style={{ width: '60px', height: '15px', background: '#e0e0e0', borderRadius: '4px 4px 0 0' }} />
+                      )}
                     </div>
                     <div style={{
                       marginTop: '0.5rem',
                       fontWeight: month.isCurrentMonth ? 'bold' : 'normal',
-                      color: month.isCurrentMonth ? '#27ae60' : '#666',
+                      color: month.isCurrentMonth ? '#2c3e50' : '#666',
                       fontSize: month.isCurrentMonth ? '1rem' : '0.9rem'
                     }}>
                       {month.label}
@@ -1145,6 +1103,11 @@ function HomeDashboard() {
                   </div>
                 );
               })}
+            </div>
+            {/* 凡例 */}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '1.5rem', marginBottom: '0.5rem', fontSize: '0.8rem' }}>
+              <span><span style={{ display: 'inline-block', width: '12px', height: '12px', background: '#3498db', borderRadius: '2px', marginRight: '4px', verticalAlign: 'middle' }}></span>新規</span>
+              <span><span style={{ display: 'inline-block', width: '12px', height: '12px', background: '#2ecc71', borderRadius: '2px', marginRight: '4px', verticalAlign: 'middle' }}></span>既存</span>
             </div>
             <TotalRow>
               <span>四半期合計</span>
@@ -1377,119 +1340,33 @@ function HomeDashboard() {
         </Card>
       </FullWidthContainer>
 
-      {/* 滞留商談リスト */}
-      <FullWidthContainer>
-        <Card>
-          <CardTitle>
-            <FiAlertTriangle style={{ color: '#e74c3c' }} />
-            滞留商談リスト（登録から90日以上経過）
-          </CardTitle>
-          {stagnantDeals.length > 0 ? (
-            <Table>
-              <thead>
-                <tr>
-                  <Th>会社名</Th>
-                  <Th>提案メニュー</Th>
-                  <Th style={{ textAlign: 'center' }}>経過日数</Th>
-                  <Th style={{ textAlign: 'right' }}>想定予算</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {stagnantDeals.map((deal) => (
-                  <tr key={deal.id}>
-                    <Td>{deal.companyName}</Td>
-                    <Td>{deal.proposalMenu}</Td>
-                    <Td style={{ textAlign: 'center' }}>
-                      <AlertBadge>{deal.daysElapsed}日</AlertBadge>
-                    </Td>
-                    <Td style={{ textAlign: 'right' }}>{formatCurrency(deal.expectedBudget)}</Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          ) : (
-            <div style={{ textAlign: 'center', padding: '2rem', color: '#27ae60' }}>
-              ✅ 90日以上滞留している商談はありません
-            </div>
-          )}
-        </Card>
-      </FullWidthContainer>
-
-      {/* 4行目: メニュー別実績 & 会社別実績 */}
-      <GridContainer>
-        <Card>
-          <CardTitle>
-            <FiPieChart />
-            メニュー別実績サマリー
-          </CardTitle>
-          <PieChart data={menuStats} />
-          <TotalRow>
-            <span>合計</span>
-            <span>{formatCurrency(menuStats.reduce((sum, item) => sum + item.value, 0))}</span>
-          </TotalRow>
-        </Card>
-
-        <Card>
-          <CardTitle>
-            <FiPieChart />
-            会社別実績サマリー
-          </CardTitle>
-          <PieChart data={companyStats} />
-          <TotalRow>
-            <span>合計</span>
-            <span>{formatCurrency(companyStats.reduce((sum, item) => sum + item.value, 0))}</span>
-          </TotalRow>
-        </Card>
-      </GridContainer>
-
-      {/* 5行目: サービスごとの流入経路 */}
-      <FullWidthContainer>
-        <Card>
-          <CardTitle>
-            <FiPieChart />
-            サービスごとの流入経路（売上ベース）
-          </CardTitle>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginTop: '1rem' }}>
-            {Object.entries(leadSourceByService).map(([service, data]) => (
-              <div key={service} style={{
-                background: '#f8f9fa',
-                padding: '1rem',
-                borderRadius: '8px',
-                border: '1px solid #e9ecef'
-              }}>
-                <h4 style={{ margin: '0 0 0.75rem 0', color: '#2c3e50', fontSize: '0.95rem' }}>{service}</h4>
-                <PieChart data={data} />
-                <div style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: '#666', textAlign: 'center' }}>
-                  合計: {formatCurrency(data.reduce((sum, item) => sum + item.value, 0))}
-                </div>
-              </div>
-            ))}
-          </div>
-          {Object.keys(leadSourceByService).length === 0 && (
-            <div style={{ textAlign: 'center', padding: '2rem', color: '#999' }}>
-              成約済み案件の流入経路データがありません
-            </div>
-          )}
-        </Card>
-      </FullWidthContainer>
-
       {/* 目標編集モーダル */}
       {showTargetModal && (
         <Modal onClick={() => setShowTargetModal(false)}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
-            <ModalTitle>四半期目標を編集</ModalTitle>
-            <div style={{ marginBottom: '0.5rem', color: '#666' }}>
-              {quarter.label}の目標売上金額
+            <ModalTitle>四半期目標を編集（{quarter.label}）</ModalTitle>
+            <div style={{ marginBottom: '0.5rem', color: '#3498db', fontWeight: 'bold' }}>
+              新規案件の目標
             </div>
             <ModalInput
               type="number"
-              value={editingTarget}
-              onChange={(e) => setEditingTarget(e.target.value)}
-              placeholder="目標金額を入力（例: 10000000）"
+              value={editingNewTarget}
+              onChange={(e) => setEditingNewTarget(e.target.value)}
+              placeholder="新規目標金額（例: 10000000）"
+              min="0"
+            />
+            <div style={{ marginBottom: '0.5rem', color: '#2ecc71', fontWeight: 'bold' }}>
+              既存案件の目標
+            </div>
+            <ModalInput
+              type="number"
+              value={editingExistingTarget}
+              onChange={(e) => setEditingExistingTarget(e.target.value)}
+              placeholder="既存目標金額（例: 5000000）"
               min="0"
             />
             <div style={{ fontSize: '0.85rem', color: '#999', marginBottom: '1rem' }}>
-              入力例: 1000万円 → 10000000
+              合計目標: {formatCurrency((parseInt(editingNewTarget) || 0) + (parseInt(editingExistingTarget) || 0))}
             </div>
             <ModalButtons>
               <ModalButton className="cancel" onClick={() => setShowTargetModal(false)}>

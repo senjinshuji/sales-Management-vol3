@@ -14,6 +14,8 @@ import ActionLogList from './components/ActionLogList.js';
 import SalesResultsList from './components/SalesResultsList.js';
 import ContinuationManagementPage from './components/ContinuationManagementPage.js';
 import HomeDashboard from './components/HomeDashboard.js';
+import NewDealsDashboard from './components/NewDealsDashboard.js';
+import ExistingDealsDashboard from './components/ExistingDealsDashboard.js';
 import Breadcrumb from './components/Breadcrumb.js';
 import InfluencerRegisterPage from './components/InfluencerRegisterPage.js';
 import InfluencerListPage from './components/InfluencerListPage.js';
@@ -253,6 +255,12 @@ function AdminApp() {
             </NavDropdownButton>
             <NavDropdownMenu>
               <NavDropdownItem>
+                <NavDropdownLink to="/new-deals-dashboard">
+                  <FiBarChart />
+                  ダッシュボード
+                </NavDropdownLink>
+              </NavDropdownItem>
+              <NavDropdownItem>
                 <NavDropdownLink to="/progress-dashboard">
                   <FiList />
                   新規案件一覧
@@ -278,12 +286,26 @@ function AdminApp() {
               </NavDropdownItem>
             </NavDropdownMenu>
           </NavDropdown>
-          <NavItem>
-            <NavLink to="/project-management">
+          <NavDropdown>
+            <NavDropdownButton>
               <FiBriefcase />
               既存案件
-            </NavLink>
-          </NavItem>
+            </NavDropdownButton>
+            <NavDropdownMenu>
+              <NavDropdownItem>
+                <NavDropdownLink to="/existing-deals-dashboard">
+                  <FiBarChart />
+                  ダッシュボード
+                </NavDropdownLink>
+              </NavDropdownItem>
+              <NavDropdownItem>
+                <NavDropdownLink to="/project-management">
+                  <FiList />
+                  案件一覧
+                </NavDropdownLink>
+              </NavDropdownItem>
+            </NavDropdownMenu>
+          </NavDropdown>
           <NavItem>
             <NavLink to="/next-action-management">
               <FiClipboard />
@@ -341,6 +363,8 @@ function AdminApp() {
         <Breadcrumb />
         <Routes>
           <Route path="/" element={<HomeDashboard />} />
+          <Route path="/new-deals-dashboard" element={<NewDealsDashboard />} />
+          <Route path="/existing-deals-dashboard" element={<ExistingDealsDashboard />} />
           <Route path="/progress-dashboard" element={<ProgressDashboard />} />
           <Route path="/log-entry" element={<LogEntryPage />} />
           <Route path="/action-logs" element={<ActionLogList />} />
