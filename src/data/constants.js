@@ -23,7 +23,7 @@ export const SALES_REPRESENTATIVES = [
   '荒幡 輝'
 ];
 
-// ステータス（9種）フェーズ1〜8 + 失注
+// ステータス（10種）フェーズ1〜8 + Dead + 失注
 export const STATUSES = [
   'フェーズ1',
   'フェーズ2',
@@ -33,6 +33,7 @@ export const STATUSES = [
   'フェーズ6',
   'フェーズ7',
   'フェーズ8',
+  'Dead',
   '失注'
 ];
 
@@ -53,9 +54,10 @@ export const PHASE_DESCRIPTIONS = {
   'フェーズ6': '契約の手続き',
   'フェーズ7': '当社の処理',
   'フェーズ8': '受注',
+  'Dead': '失注',
 };
 
-// ステータスごとの色（フェーズ1〜8 + 失注）
+// ステータスごとの色（フェーズ1〜8 + Dead + 失注）
 export const STATUS_COLORS = {
   'フェーズ1': '#e74c3c',
   'フェーズ2': '#f39c12',
@@ -65,10 +67,11 @@ export const STATUS_COLORS = {
   'フェーズ6': '#9b59b6',
   'フェーズ7': '#1abc9c',
   'フェーズ8': '#27ae60',
+  'Dead': '#2c3e50',
   '失注': '#95a5a6'
 };
 
-// ステータスの順序（カンバンボード用）フェーズ1〜8 + 失注
+// ステータスの順序（カンバンボード用）フェーズ1〜8 + Dead + 失注
 export const STATUS_ORDER = [
   'フェーズ1',
   'フェーズ2',
@@ -78,6 +81,7 @@ export const STATUS_ORDER = [
   'フェーズ6',
   'フェーズ7',
   'フェーズ8',
+  'Dead',
   '失注'
 ];
 
