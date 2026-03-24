@@ -4,7 +4,8 @@ import styled from 'styled-components';
 import { FiTarget, FiTrendingUp, FiBarChart, FiUsers, FiAlertTriangle, FiPieChart, FiEdit2, FiDollarSign, FiUser } from 'react-icons/fi';
 import { db } from '../firebase.js';
 import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
-import { STATUSES, STATUS_COLORS, PROPOSAL_MENUS, SALES_REPRESENTATIVES } from '../data/constants.js';
+import { STATUSES, STATUS_COLORS, PROPOSAL_MENUS } from '../data/constants.js';
+import { fetchStaffByRole } from '../services/staffService.js';
 
 // フェーズごとの受注確率
 const PHASE_PROBABILITY = {
@@ -74,6 +75,7 @@ const MeterContainer = styled.div`
   flex-direction: column;
   align-items: center;
   padding: 1rem;
+  position: relative;
 `;
 
 const MeterSvg = styled.svg`
@@ -85,7 +87,7 @@ const MeterValue = styled.div`
   font-size: 2rem;
   font-weight: bold;
   color: ${props => props.color || '#2c3e50'};
-  margin-top: 0.5rem;
+  margin-top: -2rem;
 `;
 
 const MeterLabel = styled.div`
@@ -416,31 +418,19 @@ const getCurrentMonthRange = () => {
 
 // メーターグラフコンポーネント
 const MeterGauge = ({ value, target, label }) => {
-  const percentage = target > 0 ? Math.min((value / target) * 100, 150) : 0;
   const displayPercentage = target > 0 ? Math.round((value / target) * 100) : 0;
+  const clampedPercent = Math.min(Math.max(displayPercentage, 0), 100);
 
-  // 半円のパスを計算
+  // 半円のパス（背景・実績共通）
   const radius = 80;
   const centerX = 100;
   const centerY = 100;
-  const startAngle = Math.PI;
-  const endAngle = 0;
-  const angle = startAngle - (Math.min(percentage, 100) / 100) * Math.PI;
+  const arcPath = `M ${centerX - radius} ${centerY} A ${radius} ${radius} 0 1 1 ${centerX + radius} ${centerY}`;
 
-  const x = centerX + radius * Math.cos(angle);
-  const y = centerY - radius * Math.sin(angle);
-
-  const largeArcFlag = percentage > 50 ? 1 : 0;
-
-  const pathD = `
-    M ${centerX - radius} ${centerY}
-    A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x} ${y}
-  `;
-
-  const bgPathD = `
-    M ${centerX - radius} ${centerY}
-    A ${radius} ${radius} 0 1 1 ${centerX + radius} ${centerY}
-  `;
+  // 半円の全長 = π × radius
+  const totalLength = Math.PI * radius;
+  // 進捗分の長さ
+  const filledLength = (clampedPercent / 100) * totalLength;
 
   let color = '#27ae60';
   if (displayPercentage < 50) color = '#e74c3c';
@@ -450,19 +440,22 @@ const MeterGauge = ({ value, target, label }) => {
     <MeterContainer>
       <MeterSvg viewBox="0 0 200 120">
         <path
-          d={bgPathD}
+          d={arcPath}
           fill="none"
           stroke="#e0e0e0"
           strokeWidth="16"
           strokeLinecap="round"
         />
-        <path
-          d={pathD}
-          fill="none"
-          stroke={color}
-          strokeWidth="16"
-          strokeLinecap="round"
-        />
+        {clampedPercent > 0 && (
+          <path
+            d={arcPath}
+            fill="none"
+            stroke={color}
+            strokeWidth="16"
+            strokeLinecap="round"
+            strokeDasharray={`${filledLength} ${totalLength}`}
+          />
+        )}
       </MeterSvg>
       <MeterValue color={color}>{displayPercentage}%</MeterValue>
       <MeterLabel>{label}</MeterLabel>
@@ -618,9 +611,8 @@ function ExistingDealsDashboard() {
   const [monthlyPersonalSales, setMonthlyPersonalSales] = useState([]);
   const [monthForecast, setMonthForecast] = useState([]);
   const [stagnantDeals, setStagnantDeals] = useState([]);
-  const [menuStats, setMenuStats] = useState([]);
-  const [companyStats, setCompanyStats] = useState([]);
-  const [leadSourceByService, setLeadSourceByService] = useState({}); // サービスごとの流入経路
+  const [salesRepList, setSalesRepList] = useState([]); // スタッフマスターからの営業者リスト
+  const [allSalesRecords, setAllSalesRecords] = useState([]); // salesRecords（サマリー・滞留用）
 
   // 目標編集モーダル用state
   const [showTargetModal, setShowTargetModal] = useState(false);
@@ -692,10 +684,49 @@ function ExistingDealsDashboard() {
         });
       });
 
-      // 既存案件側の複製レコードを除外（新規側を正とする）
-      const filteredDeals = dealsList.filter(d => d.isExistingProject === true);
-      setDeals(filteredDeals);
-      calculateStats(filteredDeals);
+      // 既存案件リスト
+      const existingDeals = dealsList.filter(d => d.isExistingProject === true);
+
+      // 既存案件のsalesRecordsサブコレクションから全レコードを取得
+      const allSalesRecords = [];
+      await Promise.all(existingDeals.map(async (deal) => {
+        try {
+          const salesRecordsSnap = await getDocs(
+            collection(db, 'progressDashboard', deal.id, 'salesRecords')
+          );
+          // 最新レコードのsalesRepを担当者として採用
+          const recs = [];
+          salesRecordsSnap.forEach(rec => recs.push({ id: rec.id, ...rec.data() }));
+          recs.sort((a, b) => {
+            const aTime = a.createdAt?.toMillis?.() || a.createdAt?.seconds * 1000 || 0;
+            const bTime = b.createdAt?.toMillis?.() || b.createdAt?.seconds * 1000 || 0;
+            return bTime - aTime;
+          });
+          const latestRep = (recs.length > 0 && recs[0].salesRep) ? recs[0].salesRep : (deal.representative || '未設定');
+
+          recs.forEach(rd => {
+            allSalesRecords.push({
+              dealId: deal.id,
+              companyName: deal.companyName || '',
+              productName: deal.productName || '',
+              representative: latestRep,
+              proposalMenu: deal.proposalMenu,
+              leadSource: deal.leadSource,
+              recordType: rd.recordType,
+              budget: typeof rd.budget === 'string' ? Number(rd.budget) || 0 : rd.budget || 0,
+              date: rd.date,
+              phase: rd.phase,
+              confirmedDate: deal.confirmedDate,
+            });
+          });
+        } catch (err) {
+          // サブコレクション取得失敗時はスキップ
+        }
+      }));
+
+      setDeals(existingDeals);
+      setAllSalesRecords(allSalesRecords);
+      calculateStats(existingDeals, allSalesRecords);
     } catch (error) {
       console.error('データ取得エラー:', error);
     } finally {
@@ -703,54 +734,45 @@ function ExistingDealsDashboard() {
     }
   }, []);
 
-  // 統計計算
-  const calculateStats = useCallback((dealsList) => {
+  // 統計計算（既存案件リスト + salesRecordsから「継続」ラベルを集計）
+  const calculateStats = useCallback((dealsList, salesRecords) => {
     const quarter = getQuarterRange();
     const currentMonth = getCurrentMonthRange();
     const now = new Date();
 
-    // 1. 四半期実績（フェーズ8の案件の確定金額）
-    let quarterTotal = 0;
-    dealsList.forEach(deal => {
-      if (deal.status === 'フェーズ8' && deal.confirmedDate) {
-        const confirmedDate = new Date(deal.confirmedDate);
-        if (confirmedDate >= quarter.start && confirmedDate <= quarter.end) {
-          quarterTotal += deal.receivedOrderAmount || 0;
-        }
-      }
-    });
+    // ヘルパー: salesRecordsから「継続」ラベルかつdateが期間内のレコードを抽出
+    const getContinuationRecordsInRange = (start, end) => {
+      return salesRecords.filter(rec => {
+        if (rec.recordType !== '継続') return false;
+        if (!rec.date) return false;
+        const recDate = new Date(rec.date);
+        return recDate >= start && recDate <= end;
+      });
+    };
+
+    // 1. 四半期実績（salesRecordsのうち、ラベル「継続」かつdateが今四半期のbudget合計）
+    const quarterRecords = getContinuationRecordsInRange(quarter.start, quarter.end);
+    const quarterTotal = quarterRecords.reduce((sum, rec) => sum + rec.budget, 0);
     setQuarterActual(quarterTotal);
 
-    // 2. 四半期売上見込み（担当者別）- フェーズ8は100%、失注以外を含む
+    // 2. 四半期売上見込み（担当者別）
+    // = 既存案件フェーズ1-7 × 受注確率 ＋ salesRecordsの「継続」ラベル四半期実績
     const repForecast = {};
+    // パートA: 既存案件一覧のフェーズ1-7
     dealsList.forEach(deal => {
-      if (deal.status !== '失注') {
-        const rep = deal.representative || '未設定';
-        // フェーズ8は受注金額を100%で計算、それ以外は想定予算×確率
-        let forecast;
-        if (deal.status === 'フェーズ8') {
-          // 四半期内の成約案件のみ
-          if (deal.confirmedDate) {
-            const confirmedDate = new Date(deal.confirmedDate);
-            if (confirmedDate >= quarter.start && confirmedDate <= quarter.end) {
-              forecast = deal.receivedOrderAmount || 0;
-            } else {
-              forecast = 0;
-            }
-          } else {
-            forecast = 0;
-          }
-        } else {
-          const budget = deal.expectedBudget || 0;
-          const probability = PHASE_PROBABILITY[deal.status] || 0;
-          forecast = budget * probability;
-        }
-
-        if (!repForecast[rep]) {
-          repForecast[rep] = 0;
-        }
-        repForecast[rep] += forecast;
-      }
+      if (deal.status === '失注' || deal.status === 'Dead' || deal.status === 'フェーズ8') return;
+      const rep = deal.representative || '未設定';
+      const budget = deal.expectedBudget || 0;
+      const probability = PHASE_PROBABILITY[deal.status] || 0;
+      const forecast = budget * probability;
+      if (!repForecast[rep]) repForecast[rep] = 0;
+      repForecast[rep] += forecast;
+    });
+    // パートB: salesRecordsの「継続」ラベル四半期実績を加算
+    quarterRecords.forEach(rec => {
+      const rep = rec.representative;
+      if (!repForecast[rep]) repForecast[rep] = 0;
+      repForecast[rep] += rec.budget;
     });
 
     const colors = ['#3498db', '#e74c3c', '#27ae60', '#f39c12', '#9b59b6', '#1abc9c'];
@@ -761,19 +783,13 @@ function ExistingDealsDashboard() {
     })).sort((a, b) => b.value - a.value);
     setQuarterForecast(forecastData);
 
-    // 3. 個人月間売上
+    // 3. 個人月間売上（salesRecordsの「継続」ラベルかつdateが今月）
+    const monthRecords = getContinuationRecordsInRange(currentMonth.start, currentMonth.end);
     const repMonthlySales = {};
-    dealsList.forEach(deal => {
-      if (deal.status === 'フェーズ8' && deal.confirmedDate) {
-        const confirmedDate = new Date(deal.confirmedDate);
-        if (confirmedDate >= currentMonth.start && confirmedDate <= currentMonth.end) {
-          const rep = deal.representative || '未設定';
-          if (!repMonthlySales[rep]) {
-            repMonthlySales[rep] = 0;
-          }
-          repMonthlySales[rep] += deal.receivedOrderAmount || 0;
-        }
-      }
+    monthRecords.forEach(rec => {
+      const rep = rec.representative;
+      if (!repMonthlySales[rep]) repMonthlySales[rep] = 0;
+      repMonthlySales[rep] += rec.budget;
     });
 
     const monthlySalesData = Object.entries(repMonthlySales).map(([name, amount]) => ({
@@ -783,15 +799,7 @@ function ExistingDealsDashboard() {
     setMonthlyPersonalSales(monthlySalesData);
 
     // 3.25. チーム全体月間売上（実績）
-    let monthTotal = 0;
-    dealsList.forEach(deal => {
-      if (deal.status === 'フェーズ8' && deal.confirmedDate) {
-        const confirmedDate = new Date(deal.confirmedDate);
-        if (confirmedDate >= currentMonth.start && confirmedDate <= currentMonth.end) {
-          monthTotal += deal.receivedOrderAmount || 0;
-        }
-      }
-    });
+    const monthTotal = monthRecords.reduce((sum, rec) => sum + rec.budget, 0);
     setMonthActual(monthTotal);
 
     // 3.26. 四半期内の月別売上（棒グラフ用）
@@ -804,15 +812,8 @@ function ExistingDealsDashboard() {
       const monthLabel = `${monthIndex + 1}月`;
       const isCurrentMonth = monthIndex === currentMonthIndex;
 
-      let monthSales = 0;
-      dealsList.forEach(deal => {
-        if (deal.status === 'フェーズ8' && deal.confirmedDate) {
-          const confirmedDate = new Date(deal.confirmedDate);
-          if (confirmedDate >= monthStart && confirmedDate <= monthEnd) {
-            monthSales += deal.receivedOrderAmount || 0;
-          }
-        }
-      });
+      const monthRecs = getContinuationRecordsInRange(monthStart, monthEnd);
+      const monthSales = monthRecs.reduce((sum, rec) => sum + rec.budget, 0);
 
       quarterMonths.push({
         label: monthLabel,
@@ -824,17 +825,10 @@ function ExistingDealsDashboard() {
 
     // 3.5. 個人四半期売上（担当者別）
     const repQuarterlySales = {};
-    dealsList.forEach(deal => {
-      if (deal.status === 'フェーズ8' && deal.confirmedDate) {
-        const confirmedDate = new Date(deal.confirmedDate);
-        if (confirmedDate >= quarter.start && confirmedDate <= quarter.end) {
-          const rep = deal.representative || '未設定';
-          if (!repQuarterlySales[rep]) {
-            repQuarterlySales[rep] = 0;
-          }
-          repQuarterlySales[rep] += deal.receivedOrderAmount || 0;
-        }
-      }
+    quarterRecords.forEach(rec => {
+      const rep = rec.representative;
+      if (!repQuarterlySales[rep]) repQuarterlySales[rep] = 0;
+      repQuarterlySales[rep] += rec.budget;
     });
 
     const quarterlySalesData = Object.entries(repQuarterlySales).map(([name, amount]) => ({
@@ -843,36 +837,24 @@ function ExistingDealsDashboard() {
     })).sort((a, b) => b.amount - a.amount);
     setQuarterlyPersonalSales(quarterlySalesData);
 
-    // 4. 月内売上見込み（担当者別）- フェーズ8は100%、失注以外を含む
+    // 4. 月内売上見込み（担当者別）
+    // = 既存案件フェーズ1-7 × 受注確率 ＋ salesRecordsの「継続」ラベル月間実績
     const repMonthForecast = {};
+    // パートA: 既存案件一覧のフェーズ1-7
     dealsList.forEach(deal => {
-      if (deal.status !== '失注') {
-        const rep = deal.representative || '未設定';
-        // フェーズ8は受注金額を100%で計算、それ以外は想定予算×確率
-        let forecast;
-        if (deal.status === 'フェーズ8') {
-          // 月内の成約案件のみ
-          if (deal.confirmedDate) {
-            const confirmedDate = new Date(deal.confirmedDate);
-            if (confirmedDate >= currentMonth.start && confirmedDate <= currentMonth.end) {
-              forecast = deal.receivedOrderAmount || 0;
-            } else {
-              forecast = 0;
-            }
-          } else {
-            forecast = 0;
-          }
-        } else {
-          const budget = deal.expectedBudget || 0;
-          const probability = PHASE_PROBABILITY[deal.status] || 0;
-          forecast = budget * probability;
-        }
-
-        if (!repMonthForecast[rep]) {
-          repMonthForecast[rep] = 0;
-        }
-        repMonthForecast[rep] += forecast;
-      }
+      if (deal.status === '失注' || deal.status === 'Dead' || deal.status === 'フェーズ8') return;
+      const rep = deal.representative || '未設定';
+      const budget = deal.expectedBudget || 0;
+      const probability = PHASE_PROBABILITY[deal.status] || 0;
+      const forecast = budget * probability;
+      if (!repMonthForecast[rep]) repMonthForecast[rep] = 0;
+      repMonthForecast[rep] += forecast;
+    });
+    // パートB: salesRecordsの「継続」ラベル月間実績を加算
+    monthRecords.forEach(rec => {
+      const rep = rec.representative;
+      if (!repMonthForecast[rep]) repMonthForecast[rep] = 0;
+      repMonthForecast[rep] += rec.budget;
     });
 
     const monthForecastData = Object.entries(repMonthForecast).map(([name, value], index) => ({
@@ -882,187 +864,103 @@ function ExistingDealsDashboard() {
     })).sort((a, b) => b.value - a.value);
     setMonthForecast(monthForecastData);
 
-    // 5. 滞留商談リスト（90日以上）
-    const stagnant = dealsList
-      .filter(deal => {
-        if (deal.status === 'フェーズ8' || deal.status === '失注') return false;
-        if (!deal.createdAt) return false;
-        const createdDate = deal.createdAt instanceof Date ? deal.createdAt : new Date(deal.createdAt);
-        const daysDiff = Math.floor((now - createdDate) / (1000 * 60 * 60 * 24));
+    // 5. 滞留商談リスト（レコード登録日から90日以上、フェーズ8・失注・Dead以外）
+    const stagnant = salesRecords
+      .filter(rec => {
+        if (rec.phase === 'フェーズ8' || rec.phase === '失注' || rec.phase === 'Dead') return false;
+        if (!rec.date) return false;
+        const recDate = new Date(rec.date);
+        const daysDiff = Math.floor((now - recDate) / (1000 * 60 * 60 * 24));
         return daysDiff >= 90;
       })
-      .map(deal => {
-        const createdDate = deal.createdAt instanceof Date ? deal.createdAt : new Date(deal.createdAt);
-        const daysDiff = Math.floor((now - createdDate) / (1000 * 60 * 60 * 24));
+      .map(rec => {
+        const recDate = new Date(rec.date);
+        const daysDiff = Math.floor((now - recDate) / (1000 * 60 * 60 * 24));
         return {
-          id: deal.id,
-          companyName: deal.companyName || deal.productName,
-          proposalMenu: deal.proposalMenu,
+          id: rec.dealId,
+          companyName: rec.companyName,
+          proposalMenu: rec.proposalMenu,
           daysElapsed: daysDiff,
-          expectedBudget: deal.expectedBudget || 0
+          expectedBudget: rec.budget
         };
       })
       .sort((a, b) => b.daysElapsed - a.daysElapsed);
     setStagnantDeals(stagnant);
-
-    // 6. メニュー別実績（フェーズ8のみ）
-    const menuSales = {};
-    dealsList.forEach(deal => {
-      if (deal.status === 'フェーズ8') {
-        const menu = deal.proposalMenu || 'その他';
-        if (!menuSales[menu]) {
-          menuSales[menu] = 0;
-        }
-        menuSales[menu] += deal.receivedOrderAmount || 0;
-      }
-    });
-
-    const menuColors = ['#3498db', '#e74c3c', '#27ae60', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22'];
-    const menuData = Object.entries(menuSales).map(([name, value], index) => ({
-      label: name,
-      value,
-      color: menuColors[index % menuColors.length]
-    })).sort((a, b) => b.value - a.value);
-    setMenuStats(menuData);
-
-    // 7. 会社別実績（フェーズ8のみ）
-    const companySales = {};
-    dealsList.forEach(deal => {
-      if (deal.status === 'フェーズ8') {
-        const company = deal.introducer || '直営業';
-        if (!companySales[company]) {
-          companySales[company] = 0;
-        }
-        companySales[company] += deal.receivedOrderAmount || 0;
-      }
-    });
-
-    const companyColors = ['#2ecc71', '#3498db', '#9b59b6', '#e74c3c', '#f39c12', '#1abc9c'];
-    const companyData = Object.entries(companySales).map(([name, value], index) => ({
-      label: name,
-      value,
-      color: companyColors[index % companyColors.length]
-    })).sort((a, b) => b.value - a.value);
-    setCompanyStats(companyData);
-
-    // 8. サービスごとの流入経路（売上ベース・フェーズ8のみ）
-    const serviceLeadSource = {};
-    const leadSourceColors = {
-      'テレアポ': '#e74c3c',
-      'リファラル': '#3498db',
-      'パートナー': '#27ae60',
-      'ソーシャル': '#9b59b6',
-      '問い合わせフォーム': '#f39c12',
-      'アップセル': '#1abc9c',
-      'クロスセル': '#e67e22',
-      '未設定': '#95a5a6'
-    };
-
-    dealsList.forEach(deal => {
-      // フェーズ8（成約済み）のみ対象
-      if (deal.status !== 'フェーズ8') return;
-
-      const service = deal.proposalMenu || 'その他';
-      const leadSource = deal.leadSource || '未設定';
-      const amount = deal.receivedOrderAmount || 0;
-
-      if (!serviceLeadSource[service]) {
-        serviceLeadSource[service] = {};
-      }
-      if (!serviceLeadSource[service][leadSource]) {
-        serviceLeadSource[service][leadSource] = 0;
-      }
-      serviceLeadSource[service][leadSource] += amount;
-    });
-
-    // 各サービスの流入経路データを円グラフ用に変換（売上ベース）
-    const serviceLeadSourceData = {};
-    Object.entries(serviceLeadSource).forEach(([service, sources]) => {
-      const total = Object.values(sources).reduce((sum, amount) => sum + amount, 0);
-      serviceLeadSourceData[service] = Object.entries(sources).map(([source, amount]) => ({
-        label: source,
-        value: amount,
-        percentage: total > 0 ? Math.round((amount / total) * 100) : 0,
-        color: leadSourceColors[source] || '#95a5a6'
-      })).sort((a, b) => b.value - a.value);
-    });
-    setLeadSourceByService(serviceLeadSourceData);
 
   }, []);
 
   useEffect(() => {
     fetchData();
     fetchTarget();
+    // スタッフマスターから営業者リストを取得
+    fetchStaffByRole('sales').then(staff => {
+      setSalesRepList(staff.map(s => s.name));
+    }).catch(err => {
+      console.error('営業者リスト取得エラー:', err);
+    });
   }, [fetchData, fetchTarget, location.key]);
 
-  // 担当者リストを取得（SALES_REPRESENTATIVESを使用）
+  // 担当者リストを取得（スタッフマスターから + salesRecordsのデータ）
   const representativeList = useMemo(() => {
-    // 定数から取得し、データにも存在する担当者のみ表示
+    // 案件一覧と同じ条件のdealIdを対象
+    const dealIds = new Set(deals.map(d => d.id));
     const repsInData = new Set();
-    deals.forEach(deal => {
-      if (deal.representative) {
-        repsInData.add(deal.representative);
+    allSalesRecords.forEach(rec => {
+      if (rec.representative && dealIds.has(rec.dealId)) {
+        repsInData.add(rec.representative);
       }
     });
-    // SALES_REPRESENTATIVESの順番を維持しつつ、データに存在するものを優先表示
-    const allReps = [...SALES_REPRESENTATIVES];
-    // データにあってSALES_REPRESENTATIVESにない担当者も追加
+    const allReps = salesRepList.length > 0 ? [...salesRepList] : [];
     repsInData.forEach(rep => {
       if (!allReps.includes(rep)) {
         allReps.push(rep);
       }
     });
     return allReps;
-  }, [deals]);
+  }, [deals, allSalesRecords, salesRepList]);
 
-  // 選択された担当者のサマリーデータを計算
+  // 選択された担当者のサマリーデータを計算（salesRecordsベース、案件一覧の案件のみ対象）
   const representativeSummary = useMemo(() => {
     if (!selectedRepresentative) {
       return { totalCount: 0, phaseCounts: {}, phaseBudgets: {}, dealsList: [] };
     }
 
-    // フェーズ2-7の案件をフィルタリング（7→2の順で定義）
+    // 案件一覧と同じ条件のdealIdを対象
+    const dealIds = new Set(deals.map(d => d.id));
     const targetPhases = ['フェーズ7', 'フェーズ6', 'フェーズ5', 'フェーズ4', 'フェーズ3', 'フェーズ2'];
-    const filteredDeals = deals.filter(deal =>
-      deal.representative === selectedRepresentative &&
-      targetPhases.includes(deal.status)
+    const filteredRecords = allSalesRecords.filter(rec =>
+      dealIds.has(rec.dealId) &&
+      rec.representative === selectedRepresentative &&
+      targetPhases.includes(rec.phase)
     );
 
-    // 件数
-    const totalCount = filteredDeals.length;
+    const totalCount = filteredRecords.length;
 
-    // フェーズごとの件数
     const phaseCounts = {};
-    targetPhases.forEach(phase => {
-      phaseCounts[phase] = 0;
-    });
-    filteredDeals.forEach(deal => {
-      phaseCounts[deal.status] = (phaseCounts[deal.status] || 0) + 1;
+    targetPhases.forEach(phase => { phaseCounts[phase] = 0; });
+    filteredRecords.forEach(rec => {
+      phaseCounts[rec.phase] = (phaseCounts[rec.phase] || 0) + 1;
     });
 
-    // フェーズごとの予算合計
     const phaseBudgets = {};
-    targetPhases.forEach(phase => {
-      phaseBudgets[phase] = 0;
-    });
-    filteredDeals.forEach(deal => {
-      phaseBudgets[deal.status] += deal.expectedBudget || 0;
+    targetPhases.forEach(phase => { phaseBudgets[phase] = 0; });
+    filteredRecords.forEach(rec => {
+      phaseBudgets[rec.phase] += rec.budget;
     });
 
-    // 案件一覧（7→2の順でソート）
-    const dealsList = filteredDeals.map(deal => ({
-      id: deal.id,
-      companyName: deal.companyName || deal.productName,
-      status: deal.status,
-      expectedBudget: deal.expectedBudget || 0
+    const dealsList = filteredRecords.map(rec => ({
+      id: rec.dealId,
+      companyName: rec.companyName,
+      productName: rec.productName || '',
+      status: rec.phase,
+      expectedBudget: rec.budget
     })).sort((a, b) => {
-      // フェーズ順にソート（7→2）
       const phaseOrder = { 'フェーズ7': 1, 'フェーズ6': 2, 'フェーズ5': 3, 'フェーズ4': 4, 'フェーズ3': 5, 'フェーズ2': 6 };
       return (phaseOrder[a.status] || 99) - (phaseOrder[b.status] || 99);
     });
 
     return { totalCount, phaseCounts, phaseBudgets, dealsList };
-  }, [deals, selectedRepresentative]);
+  }, [deals, allSalesRecords, selectedRepresentative]);
 
   if (isLoading) {
     return (
@@ -1345,6 +1243,7 @@ function ExistingDealsDashboard() {
                       <thead>
                         <tr>
                           <DealListTh>会社名</DealListTh>
+                          <DealListTh>商材名</DealListTh>
                           <DealListTh>フェーズ</DealListTh>
                           <DealListTh style={{ textAlign: 'right' }}>想定予算</DealListTh>
                         </tr>
@@ -1353,6 +1252,7 @@ function ExistingDealsDashboard() {
                         {representativeSummary.dealsList.map(deal => (
                           <tr key={deal.id}>
                             <DealListTd>{deal.companyName}</DealListTd>
+                            <DealListTd style={{ fontSize: '0.8rem', color: '#666' }}>{deal.productName}</DealListTd>
                             <DealListTd>
                               <PhaseBadge color={STATUS_COLORS[deal.status]}>{deal.status}</PhaseBadge>
                             </DealListTd>
@@ -1410,64 +1310,6 @@ function ExistingDealsDashboard() {
           ) : (
             <div style={{ textAlign: 'center', padding: '2rem', color: '#27ae60' }}>
               ✅ 90日以上滞留している商談はありません
-            </div>
-          )}
-        </Card>
-      </FullWidthContainer>
-
-      {/* 4行目: メニュー別実績 & 会社別実績 */}
-      <GridContainer>
-        <Card>
-          <CardTitle>
-            <FiPieChart />
-            メニュー別実績サマリー
-          </CardTitle>
-          <PieChart data={menuStats} />
-          <TotalRow>
-            <span>合計</span>
-            <span>{formatCurrency(menuStats.reduce((sum, item) => sum + item.value, 0))}</span>
-          </TotalRow>
-        </Card>
-
-        <Card>
-          <CardTitle>
-            <FiPieChart />
-            会社別実績サマリー
-          </CardTitle>
-          <PieChart data={companyStats} />
-          <TotalRow>
-            <span>合計</span>
-            <span>{formatCurrency(companyStats.reduce((sum, item) => sum + item.value, 0))}</span>
-          </TotalRow>
-        </Card>
-      </GridContainer>
-
-      {/* 5行目: サービスごとの流入経路 */}
-      <FullWidthContainer>
-        <Card>
-          <CardTitle>
-            <FiPieChart />
-            サービスごとの流入経路（売上ベース）
-          </CardTitle>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginTop: '1rem' }}>
-            {Object.entries(leadSourceByService).map(([service, data]) => (
-              <div key={service} style={{
-                background: '#f8f9fa',
-                padding: '1rem',
-                borderRadius: '8px',
-                border: '1px solid #e9ecef'
-              }}>
-                <h4 style={{ margin: '0 0 0.75rem 0', color: '#2c3e50', fontSize: '0.95rem' }}>{service}</h4>
-                <PieChart data={data} />
-                <div style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: '#666', textAlign: 'center' }}>
-                  合計: {formatCurrency(data.reduce((sum, item) => sum + item.value, 0))}
-                </div>
-              </div>
-            ))}
-          </div>
-          {Object.keys(leadSourceByService).length === 0 && (
-            <div style={{ textAlign: 'center', padding: '2rem', color: '#999' }}>
-              成約済み案件の流入経路データがありません
             </div>
           )}
         </Card>

@@ -42,15 +42,13 @@ export const fetchProjectById = async (projectId) => {
 export const fetchProjects = async () => {
   try {
     const progressRef = collection(db, 'progressDashboard');
-    // フェーズ8のみFirestoreで絞り込み、isExistingProjectはクライアントでフィルタ
-    const q = query(progressRef, where('status', '==', 'フェーズ8'));
-    const snapshot = await getDocs(q);
+    // 既存案件（isExistingProject === true）を全フェーズ取得
+    const snapshot = await getDocs(progressRef);
     const all = snapshot.docs.map((docSnap) => ({
       id: docSnap.id,
       ...docSnap.data()
     }));
-    // isExistingProject: falseの新規レコードを除外
-    return all.filter(doc => doc.isExistingProject !== false);
+    return all.filter(doc => doc.isExistingProject === true);
   } catch (error) {
     console.error('Failed to fetch projects:', error);
     throw error;
@@ -363,6 +361,82 @@ export const deleteKeyPerson = async (projectId, personId) => {
     await deleteDoc(personRef);
   } catch (error) {
     console.error('Failed to delete key person:', error);
+    throw error;
+  }
+};
+
+// ============================================
+// キーパーソン接触ログ
+// ============================================
+
+/**
+ * 接触ログを追加する
+ * @param {string} projectId - 案件ID
+ * @param {string} personId - キーパーソンID
+ * @param {object} data - { contactDate, memo }
+ */
+export const addContactLog = async (projectId, personId, data) => {
+  try {
+    const logsRef = collection(db, 'progressDashboard', projectId, 'keyPersons', personId, 'contactLogs');
+    await addDoc(logsRef, { ...data, createdAt: serverTimestamp() });
+  } catch (error) {
+    console.error('Failed to add contact log:', error);
+    throw error;
+  }
+};
+
+/**
+ * 接触ログを全件取得する（日付降順）
+ * @param {string} projectId - 案件ID
+ * @param {string} personId - キーパーソンID
+ * @returns {Promise<Array>} 接触ログ一覧
+ */
+export const fetchContactLogs = async (projectId, personId) => {
+  try {
+    const logsRef = collection(db, 'progressDashboard', projectId, 'keyPersons', personId, 'contactLogs');
+    const snapshot = await getDocs(logsRef);
+    const logs = snapshot.docs.map((docSnap) => ({
+      id: docSnap.id,
+      ...docSnap.data()
+    }));
+    // 接触日付の降順でソート
+    logs.sort((a, b) => (b.contactDate || '').localeCompare(a.contactDate || ''));
+    return logs;
+  } catch (error) {
+    console.error('Failed to fetch contact logs:', error);
+    throw error;
+  }
+};
+
+/**
+ * 接触ログを更新する
+ * @param {string} projectId - 案件ID
+ * @param {string} personId - キーパーソンID
+ * @param {string} logId - ログID
+ * @param {object} data - 更新データ
+ */
+export const updateContactLog = async (projectId, personId, logId, data) => {
+  try {
+    const logRef = doc(db, 'progressDashboard', projectId, 'keyPersons', personId, 'contactLogs', logId);
+    await updateDoc(logRef, { ...data, updatedAt: serverTimestamp() });
+  } catch (error) {
+    console.error('Failed to update contact log:', error);
+    throw error;
+  }
+};
+
+/**
+ * 接触ログを削除する
+ * @param {string} projectId - 案件ID
+ * @param {string} personId - キーパーソンID
+ * @param {string} logId - ログID
+ */
+export const deleteContactLog = async (projectId, personId, logId) => {
+  try {
+    const logRef = doc(db, 'progressDashboard', projectId, 'keyPersons', personId, 'contactLogs', logId);
+    await deleteDoc(logRef);
+  } catch (error) {
+    console.error('Failed to delete contact log:', error);
     throw error;
   }
 };

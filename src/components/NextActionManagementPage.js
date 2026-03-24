@@ -1270,10 +1270,10 @@ const NextActionManagementPage = () => {
       {/* 担当者タブ */}
       <TabBar>
         <Tab $active={!selectedAssignee} onClick={() => setSelectedAssignee(null)}>
-          全員 ({allNas.length})
+          全員 ({allNas.filter(na => (na.actionStatus || STATUS_ACTIVE) !== STATUS_DONE).length})
         </Tab>
         {assignees.map(name => {
-          const count = allNas.filter(na => na.actionAssignee === name || na.reviewAssignee === name).length;
+          const count = allNas.filter(na => (na.actionAssignee === name || na.reviewAssignee === name) && (na.actionStatus || STATUS_ACTIVE) !== STATUS_DONE).length;
           return (
             <Tab key={name} $active={selectedAssignee === name} onClick={() => setSelectedAssignee(name)}>
               {name} ({count})

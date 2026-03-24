@@ -74,6 +74,7 @@ const MeterContainer = styled.div`
   flex-direction: column;
   align-items: center;
   padding: 1rem;
+  position: relative;
 `;
 
 const MeterSvg = styled.svg`
@@ -85,7 +86,7 @@ const MeterValue = styled.div`
   font-size: 2rem;
   font-weight: bold;
   color: ${props => props.color || '#2c3e50'};
-  margin-top: 0.5rem;
+  margin-top: -2rem;
 `;
 
 const MeterLabel = styled.div`
@@ -416,31 +417,19 @@ const getCurrentMonthRange = () => {
 
 // メーターグラフコンポーネント
 const MeterGauge = ({ value, target, label }) => {
-  const percentage = target > 0 ? Math.min((value / target) * 100, 150) : 0;
   const displayPercentage = target > 0 ? Math.round((value / target) * 100) : 0;
+  const clampedPercent = Math.min(Math.max(displayPercentage, 0), 100);
 
-  // 半円のパスを計算
+  // 半円のパス（背景・実績共通）
   const radius = 80;
   const centerX = 100;
   const centerY = 100;
-  const startAngle = Math.PI;
-  const endAngle = 0;
-  const angle = startAngle - (Math.min(percentage, 100) / 100) * Math.PI;
+  const arcPath = `M ${centerX - radius} ${centerY} A ${radius} ${radius} 0 1 1 ${centerX + radius} ${centerY}`;
 
-  const x = centerX + radius * Math.cos(angle);
-  const y = centerY - radius * Math.sin(angle);
-
-  const largeArcFlag = percentage > 50 ? 1 : 0;
-
-  const pathD = `
-    M ${centerX - radius} ${centerY}
-    A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x} ${y}
-  `;
-
-  const bgPathD = `
-    M ${centerX - radius} ${centerY}
-    A ${radius} ${radius} 0 1 1 ${centerX + radius} ${centerY}
-  `;
+  // 半円の全長 = π × radius
+  const totalLength = Math.PI * radius;
+  // 進捗分の長さ
+  const filledLength = (clampedPercent / 100) * totalLength;
 
   let color = '#27ae60';
   if (displayPercentage < 50) color = '#e74c3c';
@@ -450,19 +439,22 @@ const MeterGauge = ({ value, target, label }) => {
     <MeterContainer>
       <MeterSvg viewBox="0 0 200 120">
         <path
-          d={bgPathD}
+          d={arcPath}
           fill="none"
           stroke="#e0e0e0"
           strokeWidth="16"
           strokeLinecap="round"
         />
-        <path
-          d={pathD}
-          fill="none"
-          stroke={color}
-          strokeWidth="16"
-          strokeLinecap="round"
-        />
+        {clampedPercent > 0 && (
+          <path
+            d={arcPath}
+            fill="none"
+            stroke={color}
+            strokeWidth="16"
+            strokeLinecap="round"
+            strokeDasharray={`${filledLength} ${totalLength}`}
+          />
+        )}
       </MeterSvg>
       <MeterValue color={color}>{displayPercentage}%</MeterValue>
       <MeterLabel>{label}</MeterLabel>

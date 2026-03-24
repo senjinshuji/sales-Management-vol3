@@ -13,6 +13,7 @@ import {
   fetchMonthlyData, saveMonthlyData,
   addSalesRecord, fetchSalesRecords, updateSalesRecord, deleteSalesRecord,
   addKeyPerson, fetchKeyPersons, updateKeyPerson, deleteKeyPerson,
+  addContactLog, fetchContactLogs, updateContactLog, deleteContactLog,
   addOperationMemo, fetchOperationMemos, updateOperationMemo, deleteOperationMemo,
   addSalesEntry, fetchSalesEntries, deleteSalesEntry, updateSalesEntry, updateSalesEntryStatus,
   addNaComment, fetchNaComments, updateNaComment, deleteNaComment
@@ -531,6 +532,47 @@ const EmptyText = styled.div`
   padding: 2rem;
   color: #95a5a6;
   font-size: 0.9rem;
+`;
+
+// ============================================
+// Styled Components - 接触ログ
+// ============================================
+
+const ContactLogPanel = styled.div`
+  border-top: 1px solid #e0e0e0;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+`;
+
+const ContactLogCard = styled.div`
+  background: #f8f9fa;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin-bottom: 0.5rem;
+  position: relative;
+`;
+
+const ContactLogDate = styled.div`
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 0.25rem;
+`;
+
+const ContactLogMemo = styled.div`
+  font-size: 0.85rem;
+  color: #555;
+  white-space: pre-wrap;
+  word-break: break-word;
+`;
+
+const ContactLogActions = styled.div`
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  gap: 0.25rem;
 `;
 
 // ============================================
@@ -2429,6 +2471,14 @@ const KeyPersonTab = ({ project }) => {
   const [editForm, setEditForm] = useState({
     name: '', title: '', contact: '', note: ''
   });
+  // 接触ログ用state
+  const [expandedPersonId, setExpandedPersonId] = useState(null);
+  const [contactLogs, setContactLogs] = useState([]);
+  const [contactForm, setContactForm] = useState({
+    contactDate: new Date().toISOString().split('T')[0], memo: ''
+  });
+  const [editingLogId, setEditingLogId] = useState(null);
+  const [editingLog, setEditingLog] = useState({ contactDate: '', memo: '' });
 
   /** キーパーソン一覧を取得 */
   const loadPersons = useCallback(async () => {
@@ -2444,6 +2494,69 @@ const KeyPersonTab = ({ project }) => {
   useEffect(() => {
     loadPersons();
   }, [loadPersons]);
+
+  /** 接触ログを取得 */
+  const loadContactLogs = useCallback(async (personId) => {
+    if (!project.id || !personId) return;
+    try {
+      const data = await fetchContactLogs(project.id, personId);
+      setContactLogs(data);
+    } catch (error) {
+      console.error('Failed to load contact logs:', error);
+    }
+  }, [project.id]);
+
+  /** カード展開トグル */
+  const handleToggleExpand = (personId) => {
+    if (expandedPersonId === personId) {
+      setExpandedPersonId(null);
+      setContactLogs([]);
+    } else {
+      setExpandedPersonId(personId);
+      setEditingLogId(null);
+      setContactForm({ contactDate: new Date().toISOString().split('T')[0], memo: '' });
+      loadContactLogs(personId);
+    }
+  };
+
+  /** 接触ログを追加 */
+  const handleAddLog = async () => {
+    if (!contactForm.contactDate) return;
+    try {
+      await addContactLog(project.id, expandedPersonId, { ...contactForm });
+      setContactForm({ contactDate: new Date().toISOString().split('T')[0], memo: '' });
+      await loadContactLogs(expandedPersonId);
+    } catch (error) {
+      console.error('Failed to add contact log:', error);
+    }
+  };
+
+  /** ログ編集開始 */
+  const handleStartEditLog = (log) => {
+    setEditingLogId(log.id);
+    setEditingLog({ contactDate: log.contactDate || '', memo: log.memo || '' });
+  };
+
+  /** ログ編集保存 */
+  const handleSaveEditLog = async () => {
+    try {
+      await updateContactLog(project.id, expandedPersonId, editingLogId, { ...editingLog });
+      setEditingLogId(null);
+      await loadContactLogs(expandedPersonId);
+    } catch (error) {
+      console.error('Failed to update contact log:', error);
+    }
+  };
+
+  /** ログ削除 */
+  const handleDeleteLog = async (logId) => {
+    try {
+      await deleteContactLog(project.id, expandedPersonId, logId);
+      await loadContactLogs(expandedPersonId);
+    } catch (error) {
+      console.error('Failed to delete contact log:', error);
+    }
+  };
 
   /** 追加フォームを表示 */
   const handleStartAdd = () => {
@@ -2467,6 +2580,7 @@ const KeyPersonTab = ({ project }) => {
   /** 編集モードに切り替え */
   const handleStartEdit = (person) => {
     setEditingId(person.id);
+    setExpandedPersonId(null);
     setEditForm({
       name: person.name || '',
       title: person.title || '',
@@ -2490,6 +2604,7 @@ const KeyPersonTab = ({ project }) => {
   const handleDelete = async (personId) => {
     try {
       await deleteKeyPerson(project.id, personId);
+      if (expandedPersonId === personId) setExpandedPersonId(null);
       await loadPersons();
     } catch (error) {
       console.error('Failed to delete key person:', error);
@@ -2546,6 +2661,76 @@ const KeyPersonTab = ({ project }) => {
     </PersonCard>
   );
 
+  /** 接触ログパネル描画 */
+  const renderContactLogs = (personId) => (
+    <ContactLogPanel onClick={e => e.stopPropagation()}>
+      {/* 新規追加フォーム */}
+      <ActionForm>
+        <DateInput
+          type="date"
+          value={contactForm.contactDate}
+          onChange={e => setContactForm(prev => ({ ...prev, contactDate: e.target.value }))}
+        />
+        <ActionInput
+          value={contactForm.memo}
+          onChange={e => {
+            setContactForm(prev => ({ ...prev, memo: e.target.value }));
+            autoResize(e);
+          }}
+          placeholder="接触メモ..."
+          rows={1}
+          style={{ minHeight: '36px' }}
+        />
+        <SendButton onClick={handleAddLog} disabled={!contactForm.contactDate}>
+          <FiSend size={14} />
+        </SendButton>
+      </ActionForm>
+      {/* ログ一覧 */}
+      {contactLogs.length === 0 ? (
+        <EmptyText style={{ padding: '1rem' }}>接触ログはまだありません</EmptyText>
+      ) : (
+        contactLogs.map(log => (
+          editingLogId === log.id ? (
+            <ContactLogCard key={log.id}>
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', alignItems: 'center' }}>
+                <DateInput
+                  type="date"
+                  value={editingLog.contactDate}
+                  onChange={e => setEditingLog(prev => ({ ...prev, contactDate: e.target.value }))}
+                />
+              </div>
+              <ActionInput
+                value={editingLog.memo}
+                onChange={e => {
+                  setEditingLog(prev => ({ ...prev, memo: e.target.value }));
+                  autoResize(e);
+                }}
+                rows={2}
+              />
+              <SaveCancelButtons style={{ marginTop: '0.5rem' }}>
+                <SmallButton $primary onClick={handleSaveEditLog}>保存</SmallButton>
+                <SmallButton onClick={() => setEditingLogId(null)}>取消</SmallButton>
+              </SaveCancelButtons>
+            </ContactLogCard>
+          ) : (
+            <ContactLogCard key={log.id}>
+              <ContactLogDate>{log.contactDate}</ContactLogDate>
+              <ContactLogMemo>{log.memo}</ContactLogMemo>
+              <ContactLogActions>
+                <IconButton onClick={() => handleStartEditLog(log)}>
+                  <FiEdit2 size={12} />
+                </IconButton>
+                <IconButton $danger onClick={() => handleDeleteLog(log.id)}>
+                  <FiTrash2 size={12} />
+                </IconButton>
+              </ContactLogActions>
+            </ContactLogCard>
+          )
+        ))
+      )}
+    </ContactLogPanel>
+  );
+
   return (
     <div>
       <SectionTitle>キーパーソン</SectionTitle>
@@ -2568,12 +2753,19 @@ const KeyPersonTab = ({ project }) => {
               {renderForm(handleSaveEdit)}
             </React.Fragment>
           ) : (
-            <PersonCard key={person.id}>
-              <PersonName>{person.name}</PersonName>
+            <PersonCard
+              key={person.id}
+              onClick={() => handleToggleExpand(person.id)}
+              style={{ cursor: 'pointer' }}
+            >
+              <PersonName>
+                {expandedPersonId === person.id ? <FiChevronDown size={14} style={{ marginRight: '0.25rem' }} /> : <FiChevronRight size={14} style={{ marginRight: '0.25rem' }} />}
+                {person.name}
+              </PersonName>
               {person.title && <PersonTitle>{person.title}</PersonTitle>}
               {person.contact && <PersonContact>{person.contact}</PersonContact>}
               {person.note && <PersonNote>{person.note}</PersonNote>}
-              <CardActions>
+              <CardActions onClick={e => e.stopPropagation()}>
                 <IconButton onClick={() => handleStartEdit(person)}>
                   <FiEdit2 size={14} />
                 </IconButton>
@@ -2581,6 +2773,7 @@ const KeyPersonTab = ({ project }) => {
                   <FiTrash2 size={14} />
                 </IconButton>
               </CardActions>
+              {expandedPersonId === person.id && renderContactLogs(person.id)}
             </PersonCard>
           )
         ))
@@ -2602,10 +2795,10 @@ const ProjectDetailPanel = ({ project, onClose, onProjectUpdate, mode, onPhase8S
   // モードに応じたサブコレクション名
   const salesSubCol = mode === 'newCase' ? 'newCaseSalesRecords' : 'salesRecords';
 
-  // 営業記録の最新フェーズを取得
+  // salesRecordsの最新レコードからフェーズ・担当者をドキュメントに同期
   useEffect(() => {
     if (!project.id) return;
-    const loadLatestPhase = async () => {
+    const syncLatestRecord = async () => {
       try {
         const records = await fetchSalesRecords(project.id, salesSubCol);
         if (records.length > 0) {
@@ -2614,21 +2807,41 @@ const ProjectDetailPanel = ({ project, onClose, onProjectUpdate, mode, onPhase8S
             const bTime = b.createdAt?.toMillis?.() || b.createdAt?.seconds * 1000 || 0;
             return bTime - aTime;
           });
-          if (records[0].phase) {
-            setLatestPhase(records[0].phase);
+          const latest = records[0];
+          const updates = {};
+          // フェーズの同期
+          if (latest.phase && latest.phase !== project.status) {
+            updates.status = latest.phase;
+            setLatestPhase(latest.phase);
+          } else if (latest.phase) {
+            setLatestPhase(latest.phase);
+          }
+          // 営業担当の同期
+          if (latest.salesRep && latest.salesRep !== project.representative) {
+            updates.representative = latest.salesRep;
+          }
+          // 不一致があれば一括更新
+          if (Object.keys(updates).length > 0) {
+            await updateProject(project.id, updates);
           }
         }
       } catch (error) {
-        console.error('Failed to load latest phase:', error);
+        console.error('Failed to sync latest record:', error);
       }
     };
-    loadLatestPhase();
+    syncLatestRecord();
   }, [project.id, salesSubCol]);
 
   // SalesTabからフェーズ更新を受け取るコールバック
-  const handlePhaseChange = useCallback((newPhase) => {
+  const handlePhaseChange = useCallback(async (newPhase) => {
     setLatestPhase(newPhase);
-  }, []);
+    // ドキュメント本体のstatusも更新（ダッシュボード集計に反映するため）
+    try {
+      await updateProject(project.id, { status: newPhase });
+    } catch (error) {
+      console.error('Failed to update document status:', error);
+    }
+  }, [project.id]);
 
   // Firestoreからスタッフ一覧を取得
   useEffect(() => {
