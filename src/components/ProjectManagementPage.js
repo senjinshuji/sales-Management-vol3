@@ -32,6 +32,9 @@ const calcContinuationStatus = (records, isExistingProject) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  // 最新レコードがDeadなら問答無用で終了
+  if (latest.phase === 'Dead') return '終了';
+
   const endDate = latest.endDate ? new Date(latest.endDate) : null;
   const startDate = latest.startDate ? new Date(latest.startDate) : null;
   const isPhase8 = latest.phase === 'フェーズ8';
