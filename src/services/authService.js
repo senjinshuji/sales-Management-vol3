@@ -15,64 +15,9 @@ const AUTH_CREDENTIALS = {
   }
 };
 
-// セッション設定
-const SESSION_TIMEOUT = 30 * 60 * 1000; // 30分（ミリ秒）
-const ACTIVITY_CHECK_INTERVAL = 60 * 1000; // 1分間隔でアクティビティチェック
-
 class AuthService {
   constructor() {
-    this.lastActivity = Date.now();
-    this.activityTimer = null;
-    this.setupActivityTracking();
-  }
-
-  // アクティビティトラッキング設定
-  setupActivityTracking() {
-    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
-    
-    events.forEach(event => {
-      document.addEventListener(event, () => {
-        this.updateLastActivity();
-      }, true);
-    });
-
-    // 定期的なセッションチェック
-    this.activityTimer = setInterval(() => {
-      this.checkSessionTimeout();
-    }, ACTIVITY_CHECK_INTERVAL);
-  }
-
-  // 最終アクティビティ時刻更新
-  updateLastActivity() {
-    this.lastActivity = Date.now();
-    
-    // セッションが存在する場合は延長
-    const adminSession = this.getSession('admin');
-    const partnerSession = this.getSession('partner');
-    
-    if (adminSession) {
-      this.extendSession('admin');
-    }
-    if (partnerSession) {
-      this.extendSession('partner');
-    }
-  }
-
-  // セッションタイムアウトチェック
-  checkSessionTimeout() {
-    const now = Date.now();
-    const adminSession = this.getSession('admin');
-    const partnerSession = this.getSession('partner');
-
-    if (adminSession && (now - adminSession.lastActivity > SESSION_TIMEOUT)) {
-      this.logout('admin');
-      this.onSessionExpired?.('admin');
-    }
-
-    if (partnerSession && (now - partnerSession.lastActivity > SESSION_TIMEOUT)) {
-      this.logout('partner');
-      this.onSessionExpired?.('partner');
-    }
+    // タイムアウトなし — ログアウトは手動またはブラウザ終了時のみ
   }
 
   // ログイン認証
@@ -138,35 +83,12 @@ class AuthService {
 
     try {
       const session = JSON.parse(sessionData);
-      const now = Date.now();
-
-      // セッション有効期限チェック
-      if (now - session.lastActivity > SESSION_TIMEOUT) {
-        this.logout(userType);
-        return null;
-      }
-
       return { ...session, fromLocal };
     } catch (error) {
       console.error('Session parse error:', error);
       this.logout(userType);
       return null;
     }
-  }
-
-  // セッション延長
-  extendSession(userType) {
-    const session = this.getSession(userType);
-    if (!session) return;
-
-    const credentials = AUTH_CREDENTIALS[userType];
-    const updatedSession = {
-      ...session,
-      lastActivity: Date.now()
-    };
-
-    const storage = session.rememberMe ? localStorage : sessionStorage;
-    storage.setItem(credentials.sessionKey, JSON.stringify(updatedSession));
   }
 
   // 認証状態チェック
@@ -185,16 +107,9 @@ class AuthService {
     return this.isAuthenticated('partner');
   }
 
-  // セッション期限切れコールバック設定
+  // セッション期限切れコールバック設定（互換性のため残す）
   setSessionExpiredCallback(callback) {
     this.onSessionExpired = callback;
-  }
-
-  // クリーンアップ
-  cleanup() {
-    if (this.activityTimer) {
-      clearInterval(this.activityTimer);
-    }
   }
 }
 
