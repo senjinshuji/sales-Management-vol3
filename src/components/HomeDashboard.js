@@ -694,9 +694,43 @@ function HomeDashboard() {
         });
       });
 
-      // 合算ダッシュボード：新規+既存の全案件を使用
+      // 新規案件と既存案件に分離
+      const newDeals = dealsList.filter(d => d.isExistingProject !== true);
+      const existingDeals = dealsList.filter(d => d.isExistingProject === true);
+
+      // 既存案件のsalesRecordsサブコレクションから全レコードを取得
+      const allSalesRecords = [];
+      await Promise.all(existingDeals.map(async (deal) => {
+        try {
+          const salesRecordsSnap = await getDocs(
+            collection(db, 'progressDashboard', deal.id, 'salesRecords')
+          );
+          const recs = [];
+          salesRecordsSnap.forEach(rec => recs.push({ id: rec.id, ...rec.data() }));
+          recs.sort((a, b) => {
+            const aTime = a.createdAt?.toMillis?.() || a.createdAt?.seconds * 1000 || 0;
+            const bTime = b.createdAt?.toMillis?.() || b.createdAt?.seconds * 1000 || 0;
+            return bTime - aTime;
+          });
+          const latestRep = (recs.length > 0 && recs[0].salesRep) ? recs[0].salesRep : (deal.representative || '未設定');
+
+          recs.forEach(rd => {
+            allSalesRecords.push({
+              dealId: deal.id,
+              representative: latestRep,
+              recordType: rd.recordType,
+              budget: typeof rd.budget === 'string' ? Number(rd.budget) || 0 : rd.budget || 0,
+              date: rd.date,
+              phase: rd.phase,
+            });
+          });
+        } catch (err) {
+          // スキップ
+        }
+      }));
+
       setDeals(dealsList);
-      calculateStats(dealsList);
+      calculateStats(newDeals, allSalesRecords);
     } catch (error) {
       console.error('データ取得エラー:', error);
     } finally {
@@ -704,61 +738,47 @@ function HomeDashboard() {
     }
   }, []);
 
-  // 統計計算
-  const calculateStats = useCallback((dealsList) => {
+  // 統計計算（新規案件リスト + 既存案件のsalesRecordsを合算）
+  const calculateStats = useCallback((newDealsList, salesRecords) => {
     const quarter = getQuarterRange();
     const currentMonth = getCurrentMonthRange();
     const now = new Date();
 
-    // 1. 四半期実績（新規・既存を分けて集計）
-    let quarterTotalNew = 0;
-    let quarterTotalExisting = 0;
-    dealsList.forEach(deal => {
-      if (deal.status === 'フェーズ8' && deal.confirmedDate) {
-        const confirmedDate = new Date(deal.confirmedDate);
-        if (confirmedDate >= quarter.start && confirmedDate <= quarter.end) {
-          const amount = deal.receivedOrderAmount || 0;
-          if (deal.isExistingProject === true) {
-            quarterTotalExisting += amount;
-          } else {
-            quarterTotalNew += amount;
-          }
-        }
-      }
-    });
+    // ヘルパー: salesRecordsからrecordTypeとdateで期間内レコードを抽出
+    const getRecordsInRange = (type, start, end) => {
+      return salesRecords.filter(rec => {
+        if (rec.recordType !== type) return false;
+        if (!rec.date) return false;
+        const recDate = new Date(rec.date);
+        return recDate >= start && recDate <= end;
+      });
+    };
+
+    // 1. 四半期実績（新規・既存を分けて集計 — salesRecordsのbudgetベース）
+    const quarterNewRecords = getRecordsInRange('新規', quarter.start, quarter.end);
+    const quarterExistingRecords = getRecordsInRange('継続', quarter.start, quarter.end);
+    const quarterTotalNew = quarterNewRecords.reduce((sum, rec) => sum + rec.budget, 0);
+    const quarterTotalExisting = quarterExistingRecords.reduce((sum, rec) => sum + rec.budget, 0);
     setQuarterActualNew(quarterTotalNew);
     setQuarterActualExisting(quarterTotalExisting);
 
-    // 2. 四半期売上見込み（担当者別）- フェーズ8は100%、失注以外を含む
+    // 2. 四半期売上見込み（担当者別）
+    // = 新規案件フェーズ1-7 × 受注確率 ＋ salesRecords四半期実績（新規+継続）
     const repForecast = {};
-    dealsList.forEach(deal => {
-      if (deal.status !== '失注') {
-        const rep = deal.representative || '未設定';
-        // フェーズ8は受注金額を100%で計算、それ以外は想定予算×確率
-        let forecast;
-        if (deal.status === 'フェーズ8') {
-          // 四半期内の成約案件のみ
-          if (deal.confirmedDate) {
-            const confirmedDate = new Date(deal.confirmedDate);
-            if (confirmedDate >= quarter.start && confirmedDate <= quarter.end) {
-              forecast = deal.receivedOrderAmount || 0;
-            } else {
-              forecast = 0;
-            }
-          } else {
-            forecast = 0;
-          }
-        } else {
-          const budget = deal.expectedBudget || 0;
-          const probability = PHASE_PROBABILITY[deal.status] || 0;
-          forecast = budget * probability;
-        }
-
-        if (!repForecast[rep]) {
-          repForecast[rep] = 0;
-        }
-        repForecast[rep] += forecast;
-      }
+    // パートA: 新規案件一覧のフェーズ1-7
+    newDealsList.forEach(deal => {
+      if (deal.status === '失注' || deal.status === 'Dead' || deal.status === 'フェーズ8') return;
+      const rep = deal.representative || '未設定';
+      const budget = deal.expectedBudget || 0;
+      const probability = PHASE_PROBABILITY[deal.status] || 0;
+      if (!repForecast[rep]) repForecast[rep] = 0;
+      repForecast[rep] += budget * probability;
+    });
+    // パートB: salesRecordsの四半期実績（新規+継続）を加算
+    [...quarterNewRecords, ...quarterExistingRecords].forEach(rec => {
+      const rep = rec.representative;
+      if (!repForecast[rep]) repForecast[rep] = 0;
+      repForecast[rep] += rec.budget;
     });
 
     const colors = ['#3498db', '#e74c3c', '#27ae60', '#f39c12', '#9b59b6', '#1abc9c'];
@@ -769,19 +789,14 @@ function HomeDashboard() {
     })).sort((a, b) => b.value - a.value);
     setQuarterForecast(forecastData);
 
-    // 3. 個人月間売上
+    // 3. 個人月間売上（salesRecords 新規+継続）
+    const monthNewRecords = getRecordsInRange('新規', currentMonth.start, currentMonth.end);
+    const monthExistingRecords = getRecordsInRange('継続', currentMonth.start, currentMonth.end);
     const repMonthlySales = {};
-    dealsList.forEach(deal => {
-      if (deal.status === 'フェーズ8' && deal.confirmedDate) {
-        const confirmedDate = new Date(deal.confirmedDate);
-        if (confirmedDate >= currentMonth.start && confirmedDate <= currentMonth.end) {
-          const rep = deal.representative || '未設定';
-          if (!repMonthlySales[rep]) {
-            repMonthlySales[rep] = 0;
-          }
-          repMonthlySales[rep] += deal.receivedOrderAmount || 0;
-        }
-      }
+    [...monthNewRecords, ...monthExistingRecords].forEach(rec => {
+      const rep = rec.representative;
+      if (!repMonthlySales[rep]) repMonthlySales[rep] = 0;
+      repMonthlySales[rep] += rec.budget;
     });
 
     const monthlySalesData = Object.entries(repMonthlySales).map(([name, amount]) => ({
@@ -800,21 +815,10 @@ function HomeDashboard() {
       const monthLabel = `${monthIndex + 1}月`;
       const isCurrentMonth = monthIndex === currentMonthIndex;
 
-      let newSales = 0;
-      let existingSales = 0;
-      dealsList.forEach(deal => {
-        if (deal.status === 'フェーズ8' && deal.confirmedDate) {
-          const confirmedDate = new Date(deal.confirmedDate);
-          if (confirmedDate >= monthStart && confirmedDate <= monthEnd) {
-            const amount = deal.receivedOrderAmount || 0;
-            if (deal.isExistingProject === true) {
-              existingSales += amount;
-            } else {
-              newSales += amount;
-            }
-          }
-        }
-      });
+      const mNewRecs = getRecordsInRange('新規', monthStart, monthEnd);
+      const mExistRecs = getRecordsInRange('継続', monthStart, monthEnd);
+      const newSales = mNewRecs.reduce((sum, rec) => sum + rec.budget, 0);
+      const existingSales = mExistRecs.reduce((sum, rec) => sum + rec.budget, 0);
 
       quarterMonths.push({
         label: monthLabel,
@@ -828,17 +832,10 @@ function HomeDashboard() {
 
     // 3.5. 個人四半期売上（担当者別）
     const repQuarterlySales = {};
-    dealsList.forEach(deal => {
-      if (deal.status === 'フェーズ8' && deal.confirmedDate) {
-        const confirmedDate = new Date(deal.confirmedDate);
-        if (confirmedDate >= quarter.start && confirmedDate <= quarter.end) {
-          const rep = deal.representative || '未設定';
-          if (!repQuarterlySales[rep]) {
-            repQuarterlySales[rep] = 0;
-          }
-          repQuarterlySales[rep] += deal.receivedOrderAmount || 0;
-        }
-      }
+    [...quarterNewRecords, ...quarterExistingRecords].forEach(rec => {
+      const rep = rec.representative;
+      if (!repQuarterlySales[rep]) repQuarterlySales[rep] = 0;
+      repQuarterlySales[rep] += rec.budget;
     });
 
     const quarterlySalesData = Object.entries(repQuarterlySales).map(([name, amount]) => ({
@@ -847,36 +844,21 @@ function HomeDashboard() {
     })).sort((a, b) => b.amount - a.amount);
     setQuarterlyPersonalSales(quarterlySalesData);
 
-    // 4. 月内売上見込み（担当者別）- フェーズ8は100%、失注以外を含む
+    // 4. 月内売上見込み（担当者別）
+    // = 新規案件フェーズ1-7 × 受注確率 ＋ salesRecords月間実績（新規+継続）
     const repMonthForecast = {};
-    dealsList.forEach(deal => {
-      if (deal.status !== '失注') {
-        const rep = deal.representative || '未設定';
-        // フェーズ8は受注金額を100%で計算、それ以外は想定予算×確率
-        let forecast;
-        if (deal.status === 'フェーズ8') {
-          // 月内の成約案件のみ
-          if (deal.confirmedDate) {
-            const confirmedDate = new Date(deal.confirmedDate);
-            if (confirmedDate >= currentMonth.start && confirmedDate <= currentMonth.end) {
-              forecast = deal.receivedOrderAmount || 0;
-            } else {
-              forecast = 0;
-            }
-          } else {
-            forecast = 0;
-          }
-        } else {
-          const budget = deal.expectedBudget || 0;
-          const probability = PHASE_PROBABILITY[deal.status] || 0;
-          forecast = budget * probability;
-        }
-
-        if (!repMonthForecast[rep]) {
-          repMonthForecast[rep] = 0;
-        }
-        repMonthForecast[rep] += forecast;
-      }
+    newDealsList.forEach(deal => {
+      if (deal.status === '失注' || deal.status === 'Dead' || deal.status === 'フェーズ8') return;
+      const rep = deal.representative || '未設定';
+      const budget = deal.expectedBudget || 0;
+      const probability = PHASE_PROBABILITY[deal.status] || 0;
+      if (!repMonthForecast[rep]) repMonthForecast[rep] = 0;
+      repMonthForecast[rep] += budget * probability;
+    });
+    [...monthNewRecords, ...monthExistingRecords].forEach(rec => {
+      const rep = rec.representative;
+      if (!repMonthForecast[rep]) repMonthForecast[rep] = 0;
+      repMonthForecast[rep] += rec.budget;
     });
 
     const monthForecastData = Object.entries(repMonthForecast).map(([name, value], index) => ({
