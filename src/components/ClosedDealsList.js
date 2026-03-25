@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import styled from 'styled-components';
 import { FiCalendar, FiSearch, FiChevronUp, FiChevronDown } from 'react-icons/fi';
 import { db } from '../firebase.js';
 import { collection, getDocs } from 'firebase/firestore';
+import ProjectDetailPanel from './ProjectDetailPanel.js';
 
 const Container = styled.div`
   max-width: 1200px;
@@ -166,6 +168,11 @@ const EmptyMessage = styled.div`
   color: #999;
 `;
 
+const TableRow = styled.tr`
+  cursor: pointer;
+  &:hover { background: #f8f9fa; }
+`;
+
 // 金額フォーマット
 const formatCurrency = (value) => {
   if (!value && value !== 0) return '-';
@@ -185,12 +192,15 @@ const getQuarterRange = () => {
 function ClosedDealsList() {
   const [isLoading, setIsLoading] = useState(true);
   const [records, setRecords] = useState([]);
+  const [dealsMap, setDealsMap] = useState({});
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [repFilter, setRepFilter] = useState('');
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const fetchData = useCallback(async () => {
     try {
@@ -199,12 +209,16 @@ function ClosedDealsList() {
       const querySnapshot = await getDocs(progressRef);
 
       const dealsList = [];
+      const newDealsMap = {};
       querySnapshot.forEach((docSnap) => {
         const d = docSnap.data();
         if (d.isExistingProject === true) {
-          dealsList.push({ id: docSnap.id, ...d });
+          const deal = { id: docSnap.id, ...d };
+          dealsList.push(deal);
+          newDealsMap[docSnap.id] = deal;
         }
       });
+      setDealsMap(newDealsMap);
 
       // 各既存案件のsalesRecordsからフェーズ8のレコードを取得
       const allRecords = [];
@@ -218,6 +232,7 @@ function ClosedDealsList() {
             if (rd.phase !== 'フェーズ8') return;
             allRecords.push({
               id: `${deal.id}_${rec.id}`,
+              dealId: deal.id,
               date: rd.date || '',
               recordType: rd.recordType || '新規',
               companyName: deal.companyName || '',
@@ -422,19 +437,41 @@ function ClosedDealsList() {
             </thead>
             <tbody>
               {filteredRecords.map(rec => (
-                <tr key={rec.id}>
+                <TableRow key={rec.id} onClick={() => {
+                  const deal = dealsMap[rec.dealId];
+                  if (deal) {
+                    setSelectedProject(deal);
+                    setSearchParams({ id: deal.id });
+                  }
+                }}>
                   <Td>{rec.date}</Td>
                   <Td><TypeBadge $type={rec.recordType}>{rec.recordType}</TypeBadge></Td>
                   <Td>{rec.companyName}</Td>
                   <Td>{rec.productName}</Td>
                   <Td style={{ textAlign: 'right' }}>{formatCurrency(rec.budget)}</Td>
                   <Td>{rec.salesRep}</Td>
-                </tr>
+                </TableRow>
               ))}
             </tbody>
           </Table>
         )}
       </TableContainer>
+
+      {selectedProject && (
+        <ProjectDetailPanel
+          project={selectedProject}
+          onClose={() => {
+            setSelectedProject(null);
+            setSearchParams({});
+            fetchData();
+          }}
+          onProjectUpdate={(updated) => {
+            setSelectedProject(prev =>
+              prev && prev.id === updated.id ? { ...prev, ...updated } : prev
+            );
+          }}
+        />
+      )}
     </Container>
   );
 }

@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import styled from 'styled-components';
 import { FiSearch, FiChevronUp, FiChevronDown } from 'react-icons/fi';
 import { db } from '../firebase.js';
 import { collection, getDocs } from 'firebase/firestore';
 import { STATUS_COLORS } from '../data/constants.js';
+import ProjectDetailPanel from './ProjectDetailPanel.js';
 
 // 提案対象フェーズ
 const PROPOSAL_PHASES = ['フェーズ2', 'フェーズ3', 'フェーズ4', 'フェーズ5', 'フェーズ6', 'フェーズ7'];
@@ -177,6 +179,11 @@ const NaDate = styled.span`
   font-size: 0.8rem;
 `;
 
+const TableRow = styled.tr`
+  cursor: pointer;
+  &:hover { background: #f8f9fa; }
+`;
+
 const LoadingMessage = styled.div`
   text-align: center;
   padding: 3rem;
@@ -263,12 +270,15 @@ const fetchNaForDeal = async (dealId) => {
 function ProposalDealsList() {
   const [isLoading, setIsLoading] = useState(true);
   const [records, setRecords] = useState([]);
+  const [dealsMap, setDealsMap] = useState({});
   const [naMap, setNaMap] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
   const [repFilter, setRepFilter] = useState('');
   const [phaseFilter, setPhaseFilter] = useState('');
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const fetchData = useCallback(async () => {
     try {
@@ -278,9 +288,13 @@ function ProposalDealsList() {
 
       // 全案件取得（新規+既存）
       const dealsList = [];
+      const newDealsMap = {};
       querySnapshot.forEach((docSnap) => {
-        dealsList.push({ id: docSnap.id, ...docSnap.data() });
+        const deal = { id: docSnap.id, ...docSnap.data() };
+        dealsList.push(deal);
+        newDealsMap[docSnap.id] = deal;
       });
+      setDealsMap(newDealsMap);
 
       // 各案件のsalesRecordsからフェーズ2-7のレコードを取得
       const allRecords = [];
@@ -405,7 +419,9 @@ function ProposalDealsList() {
   // サマリー
   const summary = useMemo(() => {
     const total = filteredRecords.reduce((sum, r) => sum + r.budget, 0);
-    return { count: filteredRecords.length, total };
+    const newCount = filteredRecords.filter(r => r.recordType === '新規').length;
+    const existCount = filteredRecords.filter(r => r.recordType === '継続').length;
+    return { count: filteredRecords.length, total, newCount, existCount };
   }, [filteredRecords]);
 
   const hasFilters = searchTerm || repFilter || phaseFilter;
@@ -466,6 +482,14 @@ function ProposalDealsList() {
           <SummaryLabel>合計予算</SummaryLabel>
           <SummaryValue>{formatCurrency(summary.total)}</SummaryValue>
         </SummaryCard>
+        <SummaryCard>
+          <SummaryLabel>新規</SummaryLabel>
+          <SummaryValue>{summary.newCount}件</SummaryValue>
+        </SummaryCard>
+        <SummaryCard>
+          <SummaryLabel>継続</SummaryLabel>
+          <SummaryValue>{summary.existCount}件</SummaryValue>
+        </SummaryCard>
       </SummaryRow>
 
       <TableContainer>
@@ -490,7 +514,13 @@ function ProposalDealsList() {
                 const na = naMap[rec.dealId];
                 const dueBadgeType = na?.actionDueDate ? getDueBadge(na.actionDueDate) : null;
                 return (
-                  <tr key={rec.id}>
+                  <TableRow key={rec.id} onClick={() => {
+                    const deal = dealsMap[rec.dealId];
+                    if (deal) {
+                      setSelectedProject(deal);
+                      setSearchParams({ id: deal.id });
+                    }
+                  }}>
                     <Td>
                       <PhaseBadge $color={STATUS_COLORS[rec.phase]}>
                         {rec.phase}
@@ -519,13 +549,30 @@ function ProposalDealsList() {
                         </>
                       ) : '-'}
                     </Td>
-                  </tr>
+                  </TableRow>
                 );
               })}
             </tbody>
           </Table>
         )}
       </TableContainer>
+
+      {selectedProject && (
+        <ProjectDetailPanel
+          project={selectedProject}
+          onClose={() => {
+            setSelectedProject(null);
+            setSearchParams({});
+            fetchData();
+          }}
+          onProjectUpdate={(updated) => {
+            setSelectedProject(prev =>
+              prev && prev.id === updated.id ? { ...prev, ...updated } : prev
+            );
+          }}
+          mode={selectedProject.isExistingProject ? undefined : 'newCase'}
+        />
+      )}
     </Container>
   );
 }

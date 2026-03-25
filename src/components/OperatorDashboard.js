@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import styled from 'styled-components';
-import { FiUser, FiCalendar, FiCheck } from 'react-icons/fi';
+import { FiUser, FiCalendar, FiCheck, FiEdit2, FiTarget } from 'react-icons/fi';
 import { db } from '../firebase.js';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
 import { fetchStaffByRole } from '../services/staffService.js';
 import { updateSalesRecord } from '../services/projectService.js';
 import { STATUS_COLORS } from '../data/constants.js';
@@ -85,27 +85,57 @@ const FilterLabel = styled.span`
   color: #666;
 `;
 
-const SummaryBar = styled.div`
-  display: flex;
-  gap: 1.5rem;
-  padding: 0.75rem 1.5rem;
-  background: #f8f9fa;
-  border-bottom: 1px solid #e9ecef;
+const TargetCard = styled(Card)`
+  padding: 1.25rem 1.5rem;
 `;
 
-const SummaryItem = styled.div`
+const TargetRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+`;
+
+const TargetMetric = styled.div`
   text-align: center;
 `;
 
-const SummaryLabel = styled.div`
+const TargetLabel = styled.div`
   font-size: 0.7rem;
   color: #999;
+  margin-bottom: 0.15rem;
 `;
 
-const SummaryValue = styled.div`
-  font-size: 1.1rem;
+const TargetValue = styled.div`
+  font-size: 1.3rem;
   font-weight: bold;
   color: ${props => props.color || '#2c3e50'};
+`;
+
+const TargetInput = styled.input`
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  width: 140px;
+  text-align: right;
+`;
+
+const TargetSaveBtn = styled.button`
+  padding: 0.3rem 0.6rem;
+  border: none;
+  border-radius: 4px;
+  background: #27ae60;
+  color: white;
+  cursor: pointer;
+  font-size: 0.8rem;
+  &:hover { background: #219a52; }
+`;
+
+const ProgressBar = styled.div`
+  flex: 1;
+  min-width: 120px;
+  max-width: 200px;
 `;
 
 const Table = styled.table`
@@ -174,6 +204,13 @@ const SaveBtn = styled.button`
   &:hover { background: #219a52; }
 `;
 
+const EditableCell = styled.span`
+  cursor: pointer;
+  padding: 0.15rem 0.3rem;
+  border-radius: 3px;
+  &:hover { background: #e8f4fd; }
+`;
+
 const EmptyMessage = styled.div`
   text-align: center;
   padding: 2rem;
@@ -204,16 +241,26 @@ function OperatorDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [operators, setOperators] = useState([]);
   const [selectedOperator, setSelectedOperator] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
-  // 既存案件データ（最新salesRecordの情報付き）
+  // 目標値
+  const [targetValue, setTargetValue] = useState(0);
+  const [editingTarget, setEditingTarget] = useState('');
+  const [isEditingTarget, setIsEditingTarget] = useState(false);
+
+  // 既存案件データ
   const [existingDeals, setExistingDeals] = useState([]);
-  // 新規案件（Phase 2-7、右パネル用）
+  // 新規案件（Phase 2-7）
   const [pipelineDeals, setPipelineDeals] = useState([]);
 
-  // 未確定案件のインライン編集state
+  // インライン編集state
   const [editingId, setEditingId] = useState(null);
+  const [editField, setEditField] = useState(null); // 'operator' or 'startDate'
   const [editOperator, setEditOperator] = useState('');
   const [editStartDate, setEditStartDate] = useState('');
 
@@ -236,7 +283,7 @@ function OperatorDashboard() {
         });
       });
 
-      // 既存案件（フェーズ8のみ）: salesRecordsの最新レコードから運用者情報を取得
+      // 既存案件（フェーズ8のみ）
       const existing = allDeals.filter(d => d.isExistingProject === true && d.status === 'フェーズ8');
       const enrichedDeals = [];
       await Promise.all(existing.map(async (deal) => {
@@ -246,7 +293,6 @@ function OperatorDashboard() {
           );
           const recs = [];
           salesSnap.forEach(rec => recs.push({ id: rec.id, ...rec.data() }));
-          // 登録日降順でソート
           recs.sort((a, b) => {
             const aDate = a.date || '';
             const bDate = b.date || '';
@@ -271,7 +317,7 @@ function OperatorDashboard() {
       }));
       setExistingDeals(enrichedDeals);
 
-      // 新規案件（Phase 2-7）: 右パネル用
+      // 新規案件（Phase 2-7）
       const pipeline = allDeals.filter(d =>
         d.isExistingProject !== true &&
         ['フェーズ2', 'フェーズ3', 'フェーズ4', 'フェーズ5', 'フェーズ6', 'フェーズ7'].includes(d.status)
@@ -284,6 +330,37 @@ function OperatorDashboard() {
     }
   }, []);
 
+  // 目標値取得
+  const fetchTarget = useCallback(async () => {
+    if (!selectedOperator || !selectedMonth) return;
+    try {
+      const targetRef = doc(db, 'operatorTargets', `${selectedOperator}_${selectedMonth}`);
+      const targetDoc = await getDoc(targetRef);
+      if (targetDoc.exists()) {
+        setTargetValue(targetDoc.data().target || 0);
+      } else {
+        setTargetValue(0);
+      }
+    } catch (error) {
+      console.error('目標値取得エラー:', error);
+    }
+  }, [selectedOperator, selectedMonth]);
+
+  // 目標値保存
+  const saveTarget = async () => {
+    if (!selectedOperator || !selectedMonth) return;
+    try {
+      const targetRef = doc(db, 'operatorTargets', `${selectedOperator}_${selectedMonth}`);
+      const value = parseInt(editingTarget) || 0;
+      await setDoc(targetRef, { target: value, updatedAt: new Date() });
+      setTargetValue(value);
+      setIsEditingTarget(false);
+    } catch (error) {
+      console.error('目標値保存エラー:', error);
+      alert('保存に失敗しました');
+    }
+  };
+
   useEffect(() => {
     fetchData();
     fetchStaffByRole('operator').then(staff => {
@@ -291,17 +368,34 @@ function OperatorDashboard() {
     }).catch(err => console.error('運用者リスト取得エラー:', err));
   }, [fetchData]);
 
-  // パート1: 選択中の運用者の案件
+  useEffect(() => {
+    fetchTarget();
+  }, [fetchTarget]);
+
+  // 選択月の予算実績
+  const monthlyActual = useMemo(() => {
+    if (!selectedOperator || !selectedMonth) return 0;
+    const monthStart = `${selectedMonth}-01`;
+    const [y, m] = selectedMonth.split('-').map(Number);
+    const monthEnd = new Date(y, m, 0);
+    const monthEndStr = `${y}-${String(m).padStart(2, '0')}-${String(monthEnd.getDate()).padStart(2, '0')}`;
+
+    return existingDeals
+      .filter(d => d.operatorRep === selectedOperator && d.startDate && d.startDate >= monthStart && d.startDate <= monthEndStr)
+      .reduce((sum, d) => sum + d.budget, 0);
+  }, [existingDeals, selectedOperator, selectedMonth]);
+
+  // パート1: 選択中の運用者の案件（月フィルタなし）
   const operatorDeals = useMemo(() => {
     if (!selectedOperator) return [];
     let deals = existingDeals.filter(d => d.operatorRep === selectedOperator);
 
-    // 日付フィルタ（開始日ベース）— 開始日未入力は常に表示
+    // 開始日フィルタ
     if (dateFrom || dateTo) {
       const from = dateFrom ? new Date(dateFrom + 'T00:00:00') : null;
       const to = dateTo ? new Date(dateTo + 'T23:59:59') : null;
       deals = deals.filter(d => {
-        if (!d.startDate) return true; // 開始日未入力は常に表示
+        if (!d.startDate) return true;
         const sd = new Date(d.startDate);
         if (from && sd < from) return false;
         if (to && sd > to) return false;
@@ -309,7 +403,7 @@ function OperatorDashboard() {
       });
     }
 
-    // ソート: 開始日あり（開始日降順）→ 開始日なし（下部）
+    // ソート: 開始日あり→なし
     deals.sort((a, b) => {
       if (a.startDate && !b.startDate) return -1;
       if (!a.startDate && b.startDate) return 1;
@@ -319,77 +413,76 @@ function OperatorDashboard() {
     return deals;
   }, [existingDeals, selectedOperator, dateFrom, dateTo]);
 
-  // パート1サマリー: 今月予算合計
-  const operatorSummary = useMemo(() => {
-    const now = new Date();
-    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    const monthEndStr = `${monthEnd.getFullYear()}-${String(monthEnd.getMonth() + 1).padStart(2, '0')}-${String(monthEnd.getDate()).padStart(2, '0')}`;
-
-    const monthlyBudget = operatorDeals
-      .filter(d => d.startDate && d.startDate >= monthStart && d.startDate <= monthEndStr)
-      .reduce((sum, d) => sum + d.budget, 0);
-
-    return { monthlyBudget, target: 0, count: operatorDeals.length };
-  }, [operatorDeals]);
-
   // パート2: 担当者未確定の案件
   const unassignedDeals = useMemo(() => {
     return existingDeals.filter(d => !d.operatorRep);
   }, [existingDeals]);
 
+  // インライン編集の開始
+  const startEditing = (deal, field) => {
+    setEditingId(deal.id);
+    setEditField(field);
+    setEditOperator(deal.operatorRep || '');
+    setEditStartDate(deal.startDate || '');
+  };
+
   // インライン編集の保存
-  const handleSaveAssignment = async (deal) => {
-    if (!editOperator && !editStartDate) return;
+  const handleSaveField = async (deal) => {
     try {
       const updates = {};
-      if (editOperator) updates.operatorRep = editOperator;
-      if (editStartDate) updates.startDate = editStartDate;
+      if (editField === 'operator') updates.operatorRep = editOperator;
+      if (editField === 'startDate') updates.startDate = editStartDate;
       await updateSalesRecord(deal.id, deal.latestRecordId, updates, 'salesRecords');
 
-      // ローカルstate更新
       setExistingDeals(prev => prev.map(d =>
         d.id === deal.id ? {
           ...d,
-          operatorRep: editOperator || d.operatorRep,
-          startDate: editStartDate || d.startDate,
+          ...(editField === 'operator' ? { operatorRep: editOperator } : {}),
+          ...(editField === 'startDate' ? { startDate: editStartDate } : {}),
         } : d
       ));
       setEditingId(null);
-      setEditOperator('');
-      setEditStartDate('');
+      setEditField(null);
     } catch (error) {
       console.error('保存失敗:', error);
       alert('保存に失敗しました');
     }
   };
 
-  // 詳細パネルの操作
+  // 詳細パネル
   const handleRowClick = (deal) => {
+    if (editingId) return; // 編集中はクリック無効
     setSelectedProject(deal);
   };
 
   const handlePanelClose = () => {
     setSelectedProject(null);
-    fetchData(); // データ再取得で変更を反映
+    fetchData();
   };
 
-  // テーブル行のレンダリング（共通）
-  const renderDealRow = (deal, editable = false) => (
-    <ClickableRow key={deal.id} onClick={() => !editable && handleRowClick(deal)}>
+  // テーブル行レンダリング（パート1・2共通）
+  const renderDealRow = (deal) => (
+    <ClickableRow key={deal.id} onClick={() => handleRowClick(deal)}>
       <Td>{deal.companyName || ''}</Td>
       <Td>{deal.productName || ''}</Td>
       <Td style={{ textAlign: 'right' }}>{formatCurrency(deal.budget)}</Td>
       <Td>
-        {editable && editingId === deal.id ? (
-          <InlineInput
-            type="date"
-            value={editStartDate}
-            onChange={(e) => setEditStartDate(e.target.value)}
-            onClick={(e) => e.stopPropagation()}
-          />
+        {editingId === deal.id && editField === 'startDate' ? (
+          <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+            <InlineInput
+              type="date"
+              value={editStartDate}
+              onChange={(e) => setEditStartDate(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+            />
+            <SaveBtn onClick={(e) => { e.stopPropagation(); handleSaveField(deal); }}>
+              <FiCheck size={12} />
+            </SaveBtn>
+          </div>
         ) : (
-          deal.startDate || '-'
+          <EditableCell onClick={(e) => { e.stopPropagation(); startEditing(deal, 'startDate'); }}>
+            {deal.startDate || '+ 入力'}
+          </EditableCell>
         )}
       </Td>
       <Td>{deal.endDate || '-'}</Td>
@@ -399,7 +492,7 @@ function OperatorDashboard() {
         </PhaseBadge>
       </Td>
       <Td>
-        {editable && editingId === deal.id ? (
+        {editingId === deal.id && editField === 'operator' ? (
           <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
             <InlineSelect
               value={editOperator}
@@ -411,28 +504,34 @@ function OperatorDashboard() {
                 <option key={op} value={op}>{op}</option>
               ))}
             </InlineSelect>
-            <SaveBtn onClick={(e) => { e.stopPropagation(); handleSaveAssignment(deal); }}>
+            <SaveBtn onClick={(e) => { e.stopPropagation(); handleSaveField(deal); }}>
               <FiCheck size={12} />
             </SaveBtn>
           </div>
-        ) : editable ? (
-          <span
-            style={{ color: '#3498db', cursor: 'pointer', fontSize: '0.8rem' }}
-            onClick={(e) => {
-              e.stopPropagation();
-              setEditingId(deal.id);
-              setEditOperator(deal.operatorRep);
-              setEditStartDate(deal.startDate);
-            }}
-          >
-            {deal.operatorRep || '+ 割当'}
-          </span>
         ) : (
-          deal.operatorRep || '-'
+          <EditableCell onClick={(e) => { e.stopPropagation(); startEditing(deal, 'operator'); }}>
+            {deal.operatorRep || '+ 割当'}
+          </EditableCell>
         )}
       </Td>
     </ClickableRow>
   );
+
+  // 月プルダウン選択肢（過去6ヶ月〜未来3ヶ月）
+  const monthOptions = useMemo(() => {
+    const options = [];
+    const now = new Date();
+    for (let i = -6; i <= 3; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const label = `${d.getFullYear()}年${d.getMonth() + 1}月`;
+      options.push({ val, label });
+    }
+    return options;
+  }, []);
+
+  const achievementRate = targetValue > 0 ? Math.round((monthlyActual / targetValue) * 100) : 0;
+  const barWidth = Math.min(achievementRate, 100);
 
   if (isLoading) {
     return <PageContainer><LoadingMessage>データを読み込み中...</LoadingMessage></PageContainer>;
@@ -443,8 +542,79 @@ function OperatorDashboard() {
       <PageTitle>運用管理</PageTitle>
 
       <MainLayout>
-        {/* 左カラム */}
         <LeftColumn>
+          {/* 運用者の目標実績 */}
+          <TargetCard>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+              <FiTarget size={18} color="#2c3e50" />
+              <span style={{ fontWeight: 'bold', color: '#2c3e50' }}>運用者の目標実績</span>
+            </div>
+            <TargetRow>
+              <Select
+                value={selectedOperator}
+                onChange={(e) => setSelectedOperator(e.target.value)}
+              >
+                <option value="">運用者を選択</option>
+                {operators.map(op => (
+                  <option key={op} value={op}>{op}</option>
+                ))}
+              </Select>
+              <Select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+              >
+                {monthOptions.map(opt => (
+                  <option key={opt.val} value={opt.val}>{opt.label}</option>
+                ))}
+              </Select>
+              {selectedOperator && (
+                <>
+                  <TargetMetric>
+                    <TargetLabel>目標</TargetLabel>
+                    {isEditingTarget ? (
+                      <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                        <TargetInput
+                          type="number"
+                          value={editingTarget}
+                          onChange={(e) => setEditingTarget(e.target.value)}
+                          placeholder="目標金額"
+                        />
+                        <TargetSaveBtn onClick={saveTarget}>保存</TargetSaveBtn>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}
+                        onClick={() => { setEditingTarget(targetValue.toString()); setIsEditingTarget(true); }}>
+                        <TargetValue>{formatCurrency(targetValue)}</TargetValue>
+                        <FiEdit2 size={12} color="#999" />
+                      </div>
+                    )}
+                  </TargetMetric>
+                  <TargetMetric>
+                    <TargetLabel>実績</TargetLabel>
+                    <TargetValue color="#3498db">{formatCurrency(monthlyActual)}</TargetValue>
+                  </TargetMetric>
+                  <TargetMetric>
+                    <TargetLabel>達成率</TargetLabel>
+                    <TargetValue color={achievementRate >= 100 ? '#27ae60' : achievementRate >= 50 ? '#f39c12' : '#e74c3c'}>
+                      {achievementRate}%
+                    </TargetValue>
+                  </TargetMetric>
+                  <ProgressBar>
+                    <div style={{ height: '16px', background: '#e9ecef', borderRadius: '4px', overflow: 'hidden' }}>
+                      <div style={{
+                        width: `${barWidth}%`,
+                        height: '100%',
+                        background: achievementRate >= 100 ? '#27ae60' : achievementRate >= 50 ? '#f39c12' : '#e74c3c',
+                        borderRadius: '4px',
+                        transition: 'width 0.3s ease'
+                      }} />
+                    </div>
+                  </ProgressBar>
+                </>
+              )}
+            </TargetRow>
+          </TargetCard>
+
           {/* パート1: 運用者の案件一覧 */}
           <Card>
             <CardHeader>
@@ -453,15 +623,6 @@ function OperatorDashboard() {
                 運用者の案件一覧
               </CardTitle>
               <FilterRow>
-                <Select
-                  value={selectedOperator}
-                  onChange={(e) => setSelectedOperator(e.target.value)}
-                >
-                  <option value="">運用者を選択</option>
-                  {operators.map(op => (
-                    <option key={op} value={op}>{op}</option>
-                  ))}
-                </Select>
                 <FiCalendar size={14} color="#666" />
                 <FilterLabel>開始日:</FilterLabel>
                 <DateInput
@@ -477,19 +638,6 @@ function OperatorDashboard() {
                 />
               </FilterRow>
             </CardHeader>
-
-            {selectedOperator && (
-              <SummaryBar>
-                <SummaryItem>
-                  <SummaryLabel>案件数</SummaryLabel>
-                  <SummaryValue>{operatorSummary.count}件</SummaryValue>
-                </SummaryItem>
-                <SummaryItem>
-                  <SummaryLabel>今月予算合計</SummaryLabel>
-                  <SummaryValue color="#3498db">{formatCurrency(operatorSummary.monthlyBudget)}</SummaryValue>
-                </SummaryItem>
-              </SummaryBar>
-            )}
 
             {!selectedOperator ? (
               <EmptyMessage>運用者を選択してください</EmptyMessage>
@@ -541,7 +689,7 @@ function OperatorDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {unassignedDeals.map(deal => renderDealRow(deal, true))}
+                  {unassignedDeals.map(deal => renderDealRow(deal))}
                 </tbody>
               </Table>
             )}
@@ -569,7 +717,7 @@ function OperatorDashboard() {
               <tbody>
                 {pipelineDeals.map(deal => (
                   <ClickableRow key={deal.id} onClick={() => handleRowClick(deal)}>
-                    <Td>{deal.companyName || deal.productName || ''}</Td>
+                    <Td>{deal.companyName || ''}</Td>
                     <Td>{deal.productName || ''}</Td>
                     <Td>
                       <PhaseBadge color={STATUS_COLORS[deal.status]}>
