@@ -7,11 +7,9 @@ import LoginPage from './components/LoginPage.js';
 import ProtectedRoute from './components/ProtectedRoute.js';
 import LogEntryPage from './components/LogEntryPage.js';
 import ProgressDashboard from './components/ProgressDashboard.js';
-import KanbanBoard from './components/KanbanBoard.js';
 import ProductDetailPage from './components/ProductDetailPage.js';
 import IntroducerMasterPage from './components/IntroducerMasterPage.js';
 import ActionLogList from './components/ActionLogList.js';
-import SalesResultsList from './components/SalesResultsList.js';
 import ContinuationManagementPage from './components/ContinuationManagementPage.js';
 import HomeDashboard from './components/HomeDashboard.js';
 import NewDealsDashboard from './components/NewDealsDashboard.js';
@@ -25,7 +23,6 @@ import NextActionManagementPage from './components/NextActionManagementPage.js';
 import ProposalMenuMasterPage from './components/ProposalMenuMasterPage.js';
 import LeadSourceMasterPage from './components/LeadSourceMasterPage.js';
 import ProjectManagementPage from './components/ProjectManagementPage.js';
-import WeeklyReportPage from './components/WeeklyReportPage.js';
 import ClosedDealsList from './components/ClosedDealsList.js';
 import { UndoProvider } from './contexts/UndoContext.js';
 import authService from './services/authService.js';
@@ -281,24 +278,6 @@ function AdminApp() {
                   新規案件一覧
                 </NavDropdownLink>
               </NavDropdownItem>
-              <NavDropdownItem>
-                <NavDropdownLink to="/kanban">
-                  <FiGrid />
-                  看板ボード
-                </NavDropdownLink>
-              </NavDropdownItem>
-              <NavDropdownItem>
-                <NavDropdownLink to="/sales-results">
-                  <FiDollarSign />
-                  成約案件一覧
-                </NavDropdownLink>
-              </NavDropdownItem>
-              <NavDropdownItem>
-                <NavDropdownLink to="/weekly-report">
-                  <FiClipboard />
-                  週報
-                </NavDropdownLink>
-              </NavDropdownItem>
             </NavDropdownMenu>
           </NavDropdown>
           <NavDropdown>
@@ -383,12 +362,10 @@ function AdminApp() {
           <Route path="/progress-dashboard" element={<ProgressDashboard />} />
           <Route path="/log-entry" element={<LogEntryPage />} />
           <Route path="/action-logs" element={<ActionLogList />} />
-          <Route path="/kanban" element={<KanbanBoard />} />
           <Route path="/product/:id" element={<ProductDetailPage />} />
           <Route path="/introducer-master" element={<IntroducerMasterPage />} />
           <Route path="/proposal-menu-master" element={<ProposalMenuMasterPage />} />
           <Route path="/lead-source-master" element={<LeadSourceMasterPage />} />
-          <Route path="/sales-results" element={<SalesResultsList />} />
           <Route path="/closed-deals" element={<ClosedDealsList />} />
           <Route path="/continuation-management" element={<ContinuationManagementPage />} />
           <Route path="/if/register" element={<InfluencerRegisterPage />} />
@@ -398,7 +375,6 @@ function AdminApp() {
           <Route path="/project-management" element={<ProjectManagementPage />} />
           <Route path="/staff-master" element={<StaffMasterPage />} />
           <Route path="/next-action-management" element={<NextActionManagementPage />} />
-          <Route path="/weekly-report" element={<WeeklyReportPage />} />
         </Routes>
       </MainContent>
       </AppContainer>

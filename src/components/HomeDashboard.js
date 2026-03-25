@@ -975,50 +975,36 @@ function HomeDashboard() {
               <FiEdit2 size={16} />
             </EditButton>
           </CardTitle>
-          {(() => {
-            const totalTarget = newQuarterTarget + existingQuarterTarget;
-            const totalActual = quarterActualNew + quarterActualExisting;
-            const percentage = totalTarget > 0 ? Math.min((totalActual / totalTarget) * 100, 150) : 0;
-            const displayPercentage = totalTarget > 0 ? Math.round((totalActual / totalTarget) * 100) : 0;
-            const newRatio = totalActual > 0 ? (quarterActualNew / totalActual) * 100 : 50;
-            let color = '#27ae60';
-            if (displayPercentage < 50) color = '#e74c3c';
-            else if (displayPercentage < 80) color = '#f39c12';
-            return (
-              <MeterContainer>
-                <MeterGauge value={totalActual} target={totalTarget} label="目標達成率" />
-                {/* 新規・既存の内訳バー */}
-                <div style={{ width: '100%', maxWidth: '300px', marginTop: '0.5rem' }}>
-                  <div style={{ display: 'flex', height: '24px', borderRadius: '4px', overflow: 'hidden', border: '1px solid #ddd' }}>
-                    {quarterActualNew > 0 && (
-                      <div style={{
-                        width: `${newRatio}%`,
-                        background: '#3498db',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        color: 'white', fontSize: '0.7rem', fontWeight: 'bold'
-                      }}>
-                        新規
-                      </div>
-                    )}
-                    {quarterActualExisting > 0 && (
-                      <div style={{
-                        width: `${100 - newRatio}%`,
-                        background: '#2ecc71',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        color: 'white', fontSize: '0.7rem', fontWeight: 'bold'
-                      }}>
-                        既存
-                      </div>
-                    )}
+          <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            {[
+              { label: '合計', actual: quarterActualNew + quarterActualExisting, target: newQuarterTarget + existingQuarterTarget, color: '#2c3e50' },
+              { label: '新規', actual: quarterActualNew, target: newQuarterTarget, color: '#3498db' },
+              { label: '既存', actual: quarterActualExisting, target: existingQuarterTarget, color: '#27ae60' },
+            ].map(({ label, actual, target, color }) => {
+              const pct = target > 0 ? Math.round((actual / target) * 100) : 0;
+              const barWidth = Math.min(pct, 100);
+              return (
+                <div key={label}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                    <span style={{ fontWeight: 'bold', fontSize: '0.9rem', color }}>{label}</span>
+                    <span style={{ fontSize: '0.8rem', color: '#666' }}>
+                      <span style={{ fontWeight: 'bold', color }}>{pct}%</span>
+                      {' '}{formatCurrency(actual)} / {formatCurrency(target)}
+                    </span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
-                    <span style={{ color: '#3498db' }}>新規: {formatCurrency(quarterActualNew)}</span>
-                    <span style={{ color: '#2ecc71' }}>既存: {formatCurrency(quarterActualExisting)}</span>
+                  <div style={{ height: '20px', background: '#e9ecef', borderRadius: '4px', overflow: 'hidden' }}>
+                    <div style={{
+                      width: `${barWidth}%`,
+                      height: '100%',
+                      background: color,
+                      borderRadius: '4px',
+                      transition: 'width 0.3s ease'
+                    }} />
                   </div>
                 </div>
-              </MeterContainer>
-            );
-          })()}
+              );
+            })}
+          </div>
         </Card>
 
         <Card>
