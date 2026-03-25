@@ -751,6 +751,7 @@ function HomeDashboard() {
     const getRecordsInRange = (type, start, end) => {
       return salesRecords.filter(rec => {
         if (rec.recordType !== type) return false;
+        if (rec.phase !== 'フェーズ8') return false;
         if (!rec.date) return false;
         const recDate = new Date(rec.date);
         return recDate >= start && recDate <= end;

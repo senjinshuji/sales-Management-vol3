@@ -747,6 +747,7 @@ function ExistingDealsDashboard() {
     const getContinuationRecordsInRange = (start, end) => {
       return salesRecords.filter(rec => {
         if (rec.recordType !== '継続') return false;
+        if (rec.phase !== 'フェーズ8') return false;
         if (!rec.date) return false;
         const recDate = new Date(rec.date);
         return recDate >= start && recDate <= end;
