@@ -68,6 +68,10 @@ export const fetchProjectSalesData = async (projectId) => {
     const records = recordsSnap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
       .sort((a, b) => {
+        // 登録日(date)降順、同日ならcreatedAtでタイブレーク
+        const aDate = a.date || '';
+        const bDate = b.date || '';
+        if (aDate !== bDate) return bDate.localeCompare(aDate);
         const aTime = a.createdAt?.toMillis?.() || 0;
         const bTime = b.createdAt?.toMillis?.() || 0;
         return bTime - aTime;

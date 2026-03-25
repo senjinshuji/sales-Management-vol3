@@ -2803,6 +2803,9 @@ const ProjectDetailPanel = ({ project, onClose, onProjectUpdate, mode, onPhase8S
         const records = await fetchSalesRecords(project.id, salesSubCol);
         if (records.length > 0) {
           records.sort((a, b) => {
+            const aDate = a.date || '';
+            const bDate = b.date || '';
+            if (aDate !== bDate) return bDate.localeCompare(aDate);
             const aTime = a.createdAt?.toMillis?.() || a.createdAt?.seconds * 1000 || 0;
             const bTime = b.createdAt?.toMillis?.() || b.createdAt?.seconds * 1000 || 0;
             return bTime - aTime;
