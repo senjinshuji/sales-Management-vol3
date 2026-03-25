@@ -26,6 +26,7 @@ import ProposalMenuMasterPage from './components/ProposalMenuMasterPage.js';
 import LeadSourceMasterPage from './components/LeadSourceMasterPage.js';
 import ProjectManagementPage from './components/ProjectManagementPage.js';
 import WeeklyReportPage from './components/WeeklyReportPage.js';
+import ClosedDealsList from './components/ClosedDealsList.js';
 import { UndoProvider } from './contexts/UndoContext.js';
 import authService from './services/authService.js';
 import './App.css';
@@ -242,12 +243,26 @@ function AdminApp() {
       
       <NavContainer>
         <NavList>
-          <NavItem>
-            <NavLink to="/">
+          <NavDropdown>
+            <NavDropdownButton>
               <FiHome />
               ホーム
-            </NavLink>
-          </NavItem>
+            </NavDropdownButton>
+            <NavDropdownMenu>
+              <NavDropdownItem>
+                <NavDropdownLink to="/">
+                  <FiBarChart />
+                  ダッシュボード
+                </NavDropdownLink>
+              </NavDropdownItem>
+              <NavDropdownItem>
+                <NavDropdownLink to="/closed-deals">
+                  <FiDollarSign />
+                  成約案件一覧
+                </NavDropdownLink>
+              </NavDropdownItem>
+            </NavDropdownMenu>
+          </NavDropdown>
           <NavDropdown>
             <NavDropdownButton>
               <FiBarChart />
@@ -374,6 +389,7 @@ function AdminApp() {
           <Route path="/proposal-menu-master" element={<ProposalMenuMasterPage />} />
           <Route path="/lead-source-master" element={<LeadSourceMasterPage />} />
           <Route path="/sales-results" element={<SalesResultsList />} />
+          <Route path="/closed-deals" element={<ClosedDealsList />} />
           <Route path="/continuation-management" element={<ContinuationManagementPage />} />
           <Route path="/if/register" element={<InfluencerRegisterPage />} />
           <Route path="/if/register/:id" element={<InfluencerRegisterPage />} />
