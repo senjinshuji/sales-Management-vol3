@@ -6,6 +6,7 @@ import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
 import { fetchStaffByRole } from '../services/staffService.js';
 import { updateSalesRecord } from '../services/projectService.js';
 import { STATUS_COLORS } from '../data/constants.js';
+import PhaseTooltip from './PhaseTooltip.js';
 import ProjectDetailPanel from './ProjectDetailPanel.js';
 
 // --- styled-components ---
@@ -21,10 +22,9 @@ const PageTitle = styled.h2`
 `;
 
 const MainLayout = styled.div`
-  display: grid;
-  grid-template-columns: 1fr 380px;
+  display: flex;
+  flex-direction: column;
   gap: 1.5rem;
-  align-items: start;
 `;
 
 const LeftColumn = styled.div`
@@ -245,8 +245,15 @@ function OperatorDashboard() {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateFrom, setDateFrom] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [dateTo, setDateTo] = useState(() => {
+    const now = new Date();
+    const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return `${last.getFullYear()}-${String(last.getMonth() + 1).padStart(2, '0')}-${String(last.getDate()).padStart(2, '0')}`;
+  });
 
   // 目標値
   const [targetValue, setTargetValue] = useState(0);
@@ -615,7 +622,7 @@ function OperatorDashboard() {
             </TargetRow>
           </TargetCard>
 
-          {/* パート1: 運用者の案件一覧 */}
+          {/* パート1 + パート2: 案件一覧（統合テーブル） */}
           <Card>
             <CardHeader>
               <CardTitle>
@@ -639,98 +646,79 @@ function OperatorDashboard() {
               </FilterRow>
             </CardHeader>
 
-            {!selectedOperator ? (
-              <EmptyMessage>運用者を選択してください</EmptyMessage>
-            ) : operatorDeals.length === 0 ? (
-              <EmptyMessage>該当する案件がありません</EmptyMessage>
-            ) : (
-              <Table>
-                <thead>
-                  <tr>
-                    <Th>会社名</Th>
-                    <Th>商材名</Th>
-                    <Th style={{ textAlign: 'right' }}>予算</Th>
-                    <Th>開始日</Th>
-                    <Th>終了日</Th>
-                    <Th>ステータス</Th>
-                    <Th>運用者</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {operatorDeals.map(deal => renderDealRow(deal))}
-                </tbody>
-              </Table>
-            )}
-          </Card>
-
-          {/* パート2: 担当者未確定の案件 */}
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                <FiUser />
-                担当者未確定の案件
-              </CardTitle>
-              <FilterLabel style={{ color: '#e74c3c' }}>{unassignedDeals.length}件</FilterLabel>
-            </CardHeader>
-
-            {unassignedDeals.length === 0 ? (
-              <EmptyMessage>未確定の案件はありません</EmptyMessage>
-            ) : (
-              <Table>
-                <thead>
-                  <tr>
-                    <Th>会社名</Th>
-                    <Th>商材名</Th>
-                    <Th style={{ textAlign: 'right' }}>予算</Th>
-                    <Th>開始日</Th>
-                    <Th>終了日</Th>
-                    <Th>ステータス</Th>
-                    <Th>運用者</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {unassignedDeals.map(deal => renderDealRow(deal))}
-                </tbody>
-              </Table>
-            )}
-          </Card>
-        </LeftColumn>
-
-        {/* 右カラム: 追加予定の予算 */}
-        <RightCard>
-          <CardHeader>
-            <CardTitle>追加予定の予算（フェーズ2-7）</CardTitle>
-            <FilterLabel>{pipelineDeals.length}件</FilterLabel>
-          </CardHeader>
-          {pipelineDeals.length === 0 ? (
-            <EmptyMessage>フェーズ2-7の案件がありません</EmptyMessage>
-          ) : (
             <Table>
               <thead>
                 <tr>
                   <Th>会社名</Th>
                   <Th>商材名</Th>
-                  <Th>フェーズ</Th>
-                  <Th style={{ textAlign: 'right' }}>想定予算</Th>
+                  <Th style={{ textAlign: 'right' }}>予算</Th>
+                  <Th>開始日</Th>
+                  <Th>終了日</Th>
+                  <Th>ステータス</Th>
+                  <Th>運用者</Th>
                 </tr>
               </thead>
               <tbody>
-                {pipelineDeals.map(deal => (
-                  <ClickableRow key={deal.id} onClick={() => handleRowClick(deal)}>
-                    <Td>{deal.companyName || ''}</Td>
-                    <Td>{deal.productName || ''}</Td>
-                    <Td>
-                      <PhaseBadge color={STATUS_COLORS[deal.status]}>
-                        {deal.status}
-                      </PhaseBadge>
-                    </Td>
-                    <Td style={{ textAlign: 'right' }}>{formatCurrency(deal.expectedBudget)}</Td>
-                  </ClickableRow>
-                ))}
+                {!selectedOperator ? (
+                  <tr><Td colSpan={7} style={{ textAlign: 'center', color: '#999', padding: '1.5rem' }}>運用者を選択してください</Td></tr>
+                ) : operatorDeals.length === 0 ? (
+                  <tr><Td colSpan={7} style={{ textAlign: 'center', color: '#999', padding: '1.5rem' }}>該当する案件がありません</Td></tr>
+                ) : (
+                  operatorDeals.map(deal => renderDealRow(deal))
+                )}
+
+                {/* 区切り: 担当者未確定の案件 */}
+                <tr><td colSpan={7} style={{ padding: '0.75rem', border: 'none' }} /></tr>
+                <tr>
+                  <Td colSpan={7} style={{ background: '#f8f9fa', padding: '0.6rem 0.75rem', fontWeight: 600, color: '#e74c3c', fontSize: '0.85rem', borderTop: '2px solid #e9ecef' }}>
+                    担当者未確定の案件（{unassignedDeals.length}件）
+                  </Td>
+                </tr>
+                {unassignedDeals.length === 0 ? (
+                  <tr><Td colSpan={7} style={{ textAlign: 'center', color: '#999', padding: '1.5rem' }}>未確定の案件はありません</Td></tr>
+                ) : (
+                  unassignedDeals.map(deal => renderDealRow(deal))
+                )}
               </tbody>
             </Table>
-          )}
-        </RightCard>
+          </Card>
+
+          {/* パート3: 追加予定の予算 */}
+          <Card>
+            <CardHeader>
+              <CardTitle>追加予定の予算（フェーズ2-7）</CardTitle>
+              <FilterLabel>{pipelineDeals.length}件</FilterLabel>
+            </CardHeader>
+            {pipelineDeals.length === 0 ? (
+              <EmptyMessage>フェーズ2-7の案件がありません</EmptyMessage>
+            ) : (
+              <Table>
+                <thead>
+                  <tr>
+                    <Th>会社名</Th>
+                    <Th>商材名</Th>
+                    <Th>フェーズ <PhaseTooltip /></Th>
+                    <Th style={{ textAlign: 'right' }}>想定予算</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pipelineDeals.map(deal => (
+                    <ClickableRow key={deal.id} onClick={() => handleRowClick(deal)}>
+                      <Td>{deal.companyName || ''}</Td>
+                      <Td>{deal.productName || ''}</Td>
+                      <Td>
+                        <PhaseBadge color={STATUS_COLORS[deal.status]}>
+                          {deal.status}
+                        </PhaseBadge>
+                      </Td>
+                      <Td style={{ textAlign: 'right' }}>{formatCurrency(deal.expectedBudget)}</Td>
+                    </ClickableRow>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+          </Card>
+        </LeftColumn>
       </MainLayout>
 
       {/* 詳細パネル */}

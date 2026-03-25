@@ -80,6 +80,7 @@ const routeConfig = {
   '/casting/manage': { name: 'キャスティング管理', icon: null },
   '/project-management': { name: '既存案件一覧', icon: null },
   '/staff-master': { name: '担当者管理', icon: null },
+  '/operator-dashboard': { name: '運用管理', icon: null },
   '/next-action-management': { name: 'NA管理', icon: null },
   
   // パートナー用ルート

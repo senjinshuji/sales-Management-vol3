@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import styled from 'styled-components';
 import { FiTarget, FiTrendingUp, FiBarChart, FiUsers, FiEdit2, FiDollarSign, FiUser } from 'react-icons/fi';
+import PhaseTooltip from './PhaseTooltip.js';
 import { db } from '../firebase.js';
 import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
 import { STATUSES, STATUS_COLORS, PROPOSAL_MENUS, SALES_REPRESENTATIVES } from '../data/constants.js';
@@ -1272,7 +1273,7 @@ function HomeDashboard() {
                       <thead>
                         <tr>
                           <DealListTh>会社名</DealListTh>
-                          <DealListTh>フェーズ</DealListTh>
+                          <DealListTh>フェーズ <PhaseTooltip /></DealListTh>
                           <DealListTh style={{ textAlign: 'right' }}>想定予算</DealListTh>
                         </tr>
                       </thead>
