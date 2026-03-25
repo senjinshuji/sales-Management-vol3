@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import styled from 'styled-components';
-import { FiCalendar } from 'react-icons/fi';
+import { FiCalendar, FiSearch, FiChevronUp, FiChevronDown } from 'react-icons/fi';
 import { db } from '../firebase.js';
 import { collection, getDocs } from 'firebase/firestore';
 
@@ -29,6 +29,12 @@ const FilterSection = styled.div`
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
   margin-bottom: 1.5rem;
   display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+`;
+
+const FilterRow = styled.div`
+  display: flex;
   align-items: center;
   gap: 1rem;
   flex-wrap: wrap;
@@ -40,6 +46,22 @@ const FilterLabel = styled.span`
 `;
 
 const DateInput = styled.input`
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.85rem;
+`;
+
+const SearchInput = styled.input`
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  flex: 1;
+  min-width: 200px;
+`;
+
+const SelectInput = styled.select`
   padding: 0.4rem 0.6rem;
   border: 1px solid #ddd;
   border-radius: 4px;
@@ -103,6 +125,17 @@ const Th = styled.th`
   color: #666;
   border-bottom: 2px solid #e9ecef;
   white-space: nowrap;
+  cursor: ${props => props.$sortable ? 'pointer' : 'default'};
+  user-select: none;
+  &:hover {
+    ${props => props.$sortable && 'background: #e9ecef;'}
+  }
+`;
+
+const SortIcon = styled.span`
+  margin-left: 0.25rem;
+  display: inline-flex;
+  vertical-align: middle;
 `;
 
 const Td = styled.td`
@@ -154,6 +187,10 @@ function ClosedDealsList() {
   const [records, setRecords] = useState([]);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [repFilter, setRepFilter] = useState('');
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState('asc');
 
   const fetchData = useCallback(async () => {
     try {
@@ -194,7 +231,7 @@ function ClosedDealsList() {
         }
       }));
 
-      // date降順でソート
+      // date降順でデフォルトソート
       allRecords.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
       setRecords(allRecords);
     } catch (error) {
@@ -208,18 +245,76 @@ function ClosedDealsList() {
     fetchData();
   }, [fetchData]);
 
-  // 日付範囲でフィルタ（デフォルトは今四半期）
+  // 担当者リスト（データから自動生成）
+  const repList = useMemo(() => {
+    const reps = new Set();
+    records.forEach(r => { if (r.salesRep) reps.add(r.salesRep); });
+    return [...reps].sort();
+  }, [records]);
+
+  // ソートハンドラ
+  const handleSort = (key) => {
+    if (sortKey === key) {
+      if (sortDir === 'asc') setSortDir('desc');
+      else { setSortKey(null); setSortDir('asc'); }
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  };
+
+  // ソートアイコン表示
+  const renderSortIcon = (key) => {
+    if (sortKey !== key) return null;
+    return (
+      <SortIcon>
+        {sortDir === 'asc' ? <FiChevronUp size={14} /> : <FiChevronDown size={14} />}
+      </SortIcon>
+    );
+  };
+
+  // フィルタ + ソート
   const filteredRecords = useMemo(() => {
     const quarter = getQuarterRange();
     const rangeStart = dateFrom ? new Date(dateFrom + 'T00:00:00') : quarter.start;
     const rangeEnd = dateTo ? new Date(dateTo + 'T23:59:59') : quarter.end;
+    const term = searchTerm.toLowerCase();
 
-    return records.filter(rec => {
+    let result = records.filter(rec => {
+      // 日付フィルタ
       if (!rec.date) return false;
       const recDate = new Date(rec.date);
-      return recDate >= rangeStart && recDate <= rangeEnd;
+      if (recDate < rangeStart || recDate > rangeEnd) return false;
+
+      // 検索フィルタ（会社名・商材名）
+      if (term) {
+        const haystack = `${rec.companyName} ${rec.productName}`.toLowerCase();
+        if (!haystack.includes(term)) return false;
+      }
+
+      // 担当者フィルタ
+      if (repFilter && rec.salesRep !== repFilter) return false;
+
+      return true;
     });
-  }, [records, dateFrom, dateTo]);
+
+    // ソート
+    if (sortKey) {
+      result = [...result].sort((a, b) => {
+        let aVal = a[sortKey];
+        let bVal = b[sortKey];
+        if (typeof aVal === 'string') aVal = aVal || '';
+        if (typeof bVal === 'string') bVal = bVal || '';
+        if (typeof aVal === 'number' && typeof bVal === 'number') {
+          return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+        }
+        const cmp = String(aVal).localeCompare(String(bVal));
+        return sortDir === 'asc' ? cmp : -cmp;
+      });
+    }
+
+    return result;
+  }, [records, dateFrom, dateTo, searchTerm, repFilter, sortKey, sortDir]);
 
   // サマリー計算
   const summary = useMemo(() => {
@@ -230,6 +325,7 @@ function ClosedDealsList() {
   }, [filteredRecords]);
 
   const quarter = getQuarterRange();
+  const hasFilters = dateFrom || dateTo || searchTerm || repFilter;
 
   if (isLoading) {
     return (
@@ -246,28 +342,48 @@ function ClosedDealsList() {
       </Header>
 
       <FilterSection>
-        <FiCalendar size={16} color="#666" />
-        <FilterLabel>期間:</FilterLabel>
-        <DateInput
-          type="date"
-          value={dateFrom}
-          onChange={(e) => setDateFrom(e.target.value)}
-        />
-        <FilterLabel>〜</FilterLabel>
-        <DateInput
-          type="date"
-          value={dateTo}
-          onChange={(e) => setDateTo(e.target.value)}
-        />
-        {(dateFrom || dateTo) ? (
-          <ResetButton onClick={() => { setDateFrom(''); setDateTo(''); }}>
-            リセット
-          </ResetButton>
-        ) : (
-          <FilterLabel style={{ color: '#999', fontSize: '0.8rem' }}>
-            未指定時は今四半期（{quarter.start.getMonth() + 1}月〜{quarter.end.getMonth() + 1}月）
-          </FilterLabel>
-        )}
+        <FilterRow>
+          <FiSearch size={16} color="#666" />
+          <SearchInput
+            type="text"
+            placeholder="会社名・商材名で検索..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+          <SelectInput
+            value={repFilter}
+            onChange={(e) => setRepFilter(e.target.value)}
+          >
+            <option value="">全担当者</option>
+            {repList.map(rep => (
+              <option key={rep} value={rep}>{rep}</option>
+            ))}
+          </SelectInput>
+        </FilterRow>
+        <FilterRow>
+          <FiCalendar size={16} color="#666" />
+          <FilterLabel>期間:</FilterLabel>
+          <DateInput
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+          />
+          <FilterLabel>〜</FilterLabel>
+          <DateInput
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+          />
+          {hasFilters ? (
+            <ResetButton onClick={() => { setDateFrom(''); setDateTo(''); setSearchTerm(''); setRepFilter(''); }}>
+              全リセット
+            </ResetButton>
+          ) : (
+            <FilterLabel style={{ color: '#999', fontSize: '0.8rem' }}>
+              未指定時は今四半期（{quarter.start.getMonth() + 1}月〜{quarter.end.getMonth() + 1}月）
+            </FilterLabel>
+          )}
+        </FilterRow>
       </FilterSection>
 
       <SummaryRow>
@@ -291,17 +407,17 @@ function ClosedDealsList() {
 
       <TableContainer>
         {filteredRecords.length === 0 ? (
-          <EmptyMessage>該当期間の成約案件がありません</EmptyMessage>
+          <EmptyMessage>該当する成約案件がありません</EmptyMessage>
         ) : (
           <Table>
             <thead>
               <tr>
-                <Th>成約日</Th>
-                <Th>新規/既存</Th>
-                <Th>会社名</Th>
-                <Th>商材名</Th>
-                <Th style={{ textAlign: 'right' }}>予算</Th>
-                <Th>営業担当者</Th>
+                <Th $sortable onClick={() => handleSort('date')}>成約日{renderSortIcon('date')}</Th>
+                <Th $sortable onClick={() => handleSort('recordType')}>新規/既存{renderSortIcon('recordType')}</Th>
+                <Th $sortable onClick={() => handleSort('companyName')}>会社名{renderSortIcon('companyName')}</Th>
+                <Th $sortable onClick={() => handleSort('productName')}>商材名{renderSortIcon('productName')}</Th>
+                <Th $sortable onClick={() => handleSort('budget')} style={{ textAlign: 'right' }}>予算{renderSortIcon('budget')}</Th>
+                <Th $sortable onClick={() => handleSort('salesRep')}>営業担当者{renderSortIcon('salesRep')}</Th>
               </tr>
             </thead>
             <tbody>
