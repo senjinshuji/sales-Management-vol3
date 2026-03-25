@@ -5,7 +5,8 @@ import { FiTarget, FiTrendingUp, FiBarChart, FiUsers, FiEdit2, FiDollarSign, FiU
 import PhaseTooltip from './PhaseTooltip.js';
 import { db } from '../firebase.js';
 import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
-import { STATUSES, STATUS_COLORS, PROPOSAL_MENUS, SALES_REPRESENTATIVES } from '../data/constants.js';
+import { STATUSES, STATUS_COLORS, PROPOSAL_MENUS } from '../data/constants.js';
+import { fetchStaffByRole } from '../services/staffService.js';
 
 // フェーズごとの受注確率
 const PHASE_PROBABILITY = {
@@ -602,6 +603,7 @@ function HomeDashboard() {
   const [newQuarterTarget, setNewQuarterTarget] = useState(10000000); // 新規目標値
   const [existingQuarterTarget, setExistingQuarterTarget] = useState(5000000); // 既存目標値
   const [selectedRepresentative, setSelectedRepresentative] = useState(''); // 担当者サマリー用
+  const [salesRepList, setSalesRepList] = useState([]); // スタッフマスターからの営業者リスト
 
   // 計算結果のstate
   const [quarterActualNew, setQuarterActualNew] = useState(0); // 新規四半期実績
@@ -878,27 +880,27 @@ function HomeDashboard() {
   useEffect(() => {
     fetchData();
     fetchTarget();
+    fetchStaffByRole('sales').then(staff => {
+      setSalesRepList(staff.map(s => s.name));
+    }).catch(err => console.error('営業者リスト取得エラー:', err));
   }, [fetchData, fetchTarget, location.key]);
 
-  // 担当者リストを取得（SALES_REPRESENTATIVESを使用）
+  // 担当者リストを取得（スタッフマスターから）
   const representativeList = useMemo(() => {
-    // 定数から取得し、データにも存在する担当者のみ表示
     const repsInData = new Set();
     deals.forEach(deal => {
       if (deal.representative) {
         repsInData.add(deal.representative);
       }
     });
-    // SALES_REPRESENTATIVESの順番を維持しつつ、データに存在するものを優先表示
-    const allReps = [...SALES_REPRESENTATIVES];
-    // データにあってSALES_REPRESENTATIVESにない担当者も追加
+    const allReps = salesRepList.length > 0 ? [...salesRepList] : [];
     repsInData.forEach(rep => {
       if (!allReps.includes(rep)) {
         allReps.push(rep);
       }
     });
     return allReps;
-  }, [deals]);
+  }, [deals, salesRepList]);
 
   // 選択された担当者のサマリーデータを計算
   const representativeSummary = useMemo(() => {
