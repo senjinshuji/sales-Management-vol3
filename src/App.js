@@ -24,6 +24,7 @@ import ProposalMenuMasterPage from './components/ProposalMenuMasterPage.js';
 import LeadSourceMasterPage from './components/LeadSourceMasterPage.js';
 import ProjectManagementPage from './components/ProjectManagementPage.js';
 import ClosedDealsList from './components/ClosedDealsList.js';
+import ProposalDealsList from './components/ProposalDealsList.js';
 import OperatorDashboard from './components/OperatorDashboard.js';
 import { UndoProvider } from './contexts/UndoContext.js';
 import authService from './services/authService.js';
@@ -275,6 +276,12 @@ function AdminApp() {
                   成約案件一覧
                 </NavDropdownLink>
               </NavDropdownItem>
+              <NavDropdownItem>
+                <NavDropdownLink to="/proposal-deals">
+                  <FiList />
+                  提案案件一覧
+                </NavDropdownLink>
+              </NavDropdownItem>
             </NavDropdownMenu>
           </NavDropdown>
           <NavDropdown>
@@ -391,6 +398,7 @@ function AdminApp() {
           <Route path="/proposal-menu-master" element={<ProposalMenuMasterPage />} />
           <Route path="/lead-source-master" element={<LeadSourceMasterPage />} />
           <Route path="/closed-deals" element={<ClosedDealsList />} />
+          <Route path="/proposal-deals" element={<ProposalDealsList />} />
           <Route path="/continuation-management" element={<ContinuationManagementPage />} />
           <Route path="/if/register" element={<InfluencerRegisterPage />} />
           <Route path="/if/register/:id" element={<InfluencerRegisterPage />} />

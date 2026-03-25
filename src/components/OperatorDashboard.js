@@ -236,8 +236,8 @@ function OperatorDashboard() {
         });
       });
 
-      // 既存案件: salesRecordsの最新レコードから運用者情報を取得
-      const existing = allDeals.filter(d => d.isExistingProject === true);
+      // 既存案件（フェーズ8のみ）: salesRecordsの最新レコードから運用者情報を取得
+      const existing = allDeals.filter(d => d.isExistingProject === true && d.status === 'フェーズ8');
       const enrichedDeals = [];
       await Promise.all(existing.map(async (deal) => {
         try {

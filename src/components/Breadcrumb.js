@@ -69,6 +69,7 @@ const routeConfig = {
   '/log-entry': { name: 'アクションログ記録', icon: null },
   '/action-logs': { name: 'アクションログ一覧', icon: null },
   '/closed-deals': { name: '成約案件一覧', icon: null },
+  '/proposal-deals': { name: '提案案件一覧', icon: null },
   '/introducer-master': { name: '紹介者マスター', icon: null },
   '/proposal-menu-master': { name: '提案メニューマスター', icon: null },
   '/lead-source-master': { name: '流入経路マスター', icon: null },
