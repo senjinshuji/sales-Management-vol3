@@ -5,9 +5,35 @@ import { db } from '../firebase.js';
 import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
 import { fetchStaffByRole } from '../services/staffService.js';
 import { updateSalesRecord } from '../services/projectService.js';
-import { STATUS_COLORS } from '../data/constants.js';
+import { STATUS_COLORS, CONTINUATION_STATUS_COLORS } from '../data/constants.js';
 import PhaseTooltip from './PhaseTooltip.js';
 import ProjectDetailPanel from './ProjectDetailPanel.js';
+
+// 継続ステータス自動判定
+const calcContinuationStatus = (records, isExistingProject) => {
+  if (!records || records.length === 0) return '';
+  const latest = records[0];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (latest.phase === 'Dead') return '終了';
+  const endDate = latest.endDate ? new Date(latest.endDate) : null;
+  const startDate = latest.startDate ? new Date(latest.startDate) : null;
+  const isPhase8 = latest.phase === 'フェーズ8';
+  const isPhase1to7 = latest.phase && latest.phase !== 'フェーズ8' && latest.phase !== '失注';
+  if (isExistingProject) {
+    if (isPhase8 && (!startDate || startDate > today)) return '継続成約';
+    if (isPhase8 && endDate && endDate < today) return '終了';
+    if (isPhase1to7 && records.length >= 2) return '継続提案中';
+    if (isPhase1to7 && records.length === 1) return '新規提案中';
+    if (startDate && (!endDate || endDate >= today)) return '施策実施中';
+  } else {
+    if (isPhase8 && (!startDate || startDate > today)) return '新規成約';
+    if (isPhase8 && endDate && endDate < today) return '終了';
+    if (isPhase1to7 && records.length >= 2) return '継続提案中';
+    if (startDate && (!endDate || endDate >= today)) return '施策実施中';
+  }
+  return '';
+};
 
 // --- styled-components ---
 const PageContainer = styled.div`
@@ -317,9 +343,10 @@ function OperatorDashboard() {
             endDate: latest?.endDate || '',
             budget: latest ? (typeof latest.budget === 'string' ? Number(latest.budget) || 0 : latest.budget || 0) : 0,
             latestPhase: latest?.phase || deal.status || '',
+            continuationStatus: calcContinuationStatus(recs, !!deal.isExistingProject),
           });
         } catch (err) {
-          enrichedDeals.push({ ...deal, operatorRep: '', startDate: '', endDate: '', budget: 0, latestPhase: deal.status || '' });
+          enrichedDeals.push({ ...deal, operatorRep: '', startDate: '', endDate: '', budget: 0, latestPhase: deal.status || '', continuationStatus: '' });
         }
       }));
       setExistingDeals(enrichedDeals);
@@ -494,9 +521,13 @@ function OperatorDashboard() {
       </Td>
       <Td>{deal.endDate || '-'}</Td>
       <Td>
-        <PhaseBadge color={STATUS_COLORS[deal.latestPhase]}>
-          {deal.latestPhase || '-'}
-        </PhaseBadge>
+        {(() => {
+          const label = deal.continuationStatus === '施策実施中' ? '施策実施中'
+            : deal.continuationStatus === '継続成約' || deal.continuationStatus === '新規成約' ? '開始前'
+            : deal.continuationStatus || '-';
+          const color = label === '施策実施中' ? '#3498db' : label === '開始前' ? '#f39c12' : '#95a5a6';
+          return <PhaseBadge color={color}>{label}</PhaseBadge>;
+        })()}
       </Td>
       <Td>
         {editingId === deal.id && editField === 'operator' ? (
