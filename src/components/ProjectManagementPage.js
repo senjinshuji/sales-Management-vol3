@@ -525,12 +525,9 @@ const ProjectManagementPage = () => {
       });
     }
 
-    // デフォルトは更新日の降順（フェーズ8に変更された順、なければ作成日）
+    // デフォルトは作成日の降順
     result = [...result].sort((a, b) => {
-      const getTime = (p) => {
-        if (p.updatedAt) return p.updatedAt.toMillis?.() || p.updatedAt.seconds * 1000 || 0;
-        return p.createdAt?.toMillis?.() || p.createdAt?.seconds * 1000 || 0;
-      };
+      const getTime = (p) => p.createdAt?.toMillis?.() || p.createdAt?.seconds * 1000 || 0;
       return getTime(b) - getTime(a);
     });
 
