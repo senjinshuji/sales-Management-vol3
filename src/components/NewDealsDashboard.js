@@ -23,25 +23,25 @@ const PHASE_PROBABILITY = {
 const DashboardContainer = styled.div`
   max-width: 1400px;
   margin: 0 auto;
-  padding: 1rem;
+  padding: 0;
 `;
 
 const Header = styled.div`
-  text-align: center;
-  margin-bottom: 2rem;
+  margin-bottom: 24px;
 `;
 
 const Title = styled.h2`
-  color: #2c3e50;
+  color: var(--color-text-primary);
   margin: 0;
-  font-size: 1.8rem;
+  font-size: 1.5rem;
+  font-weight: 600;
 `;
 
 const GridContainer = styled.div`
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
-  margin-bottom: 1.5rem;
+  gap: 20px;
+  margin-bottom: 20px;
 
   @media (max-width: 1024px) {
     grid-template-columns: 1fr;
@@ -49,24 +49,26 @@ const GridContainer = styled.div`
 `;
 
 const FullWidthContainer = styled.div`
-  margin-bottom: 1.5rem;
+  margin-bottom: 20px;
 `;
 
 const Card = styled.div`
-  background: white;
-  border-radius: 12px;
-  padding: 1.5rem;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  border: 1px solid #f0f0f0;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--color-border);
+  transition: box-shadow 0.2s ease;
 `;
 
 const CardTitle = styled.h3`
-  color: #2c3e50;
-  margin: 0 0 1rem 0;
-  font-size: 1.1rem;
+  color: var(--color-text-primary);
+  margin: 0 0 16px 0;
+  font-size: 0.95rem;
+  font-weight: 600;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 8px;
 `;
 
 // メーターグラフ用スタイル
@@ -1040,7 +1042,7 @@ function NewDealsDashboard() {
   return (
     <DashboardContainer>
       <Header>
-        <Title>📊 新規案件ダッシュボード</Title>
+        <Title>新規案件ダッシュボード</Title>
       </Header>
 
       {/* 1行目: 四半期実績 & 月間実績 */}

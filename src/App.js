@@ -32,7 +32,7 @@ import './App.css';
 
 const AppContainer = styled.div`
   min-height: 100vh;
-  background-color: #f8f9fa;
+  background-color: var(--color-bg);
 `;
 
 const HeaderWrapper = styled.div`
@@ -42,9 +42,10 @@ const HeaderWrapper = styled.div`
 `;
 
 const Header = styled.header`
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  background: #0F172A;
   color: white;
-  padding: 0.75rem 2rem;
+  padding: 0 2rem;
+  height: 52px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -52,12 +53,10 @@ const Header = styled.header`
 
 const Title = styled.h1`
   margin: 0;
-  font-size: 1.25rem;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  background: linear-gradient(90deg, #e2e8f0, #94a3b8);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #F1F5F9;
+  letter-spacing: 0.3px;
 `;
 
 const UserInfo = styled.div`
@@ -92,9 +91,9 @@ const LogoutButton = styled.button`
 `;
 
 const NavContainer = styled.nav`
-  background: #1e293b;
+  background: #1E293B;
   padding: 0 1.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 `;
 
 const NavList = styled.ul`
@@ -162,14 +161,14 @@ const NavDropdownMenu = styled.ul`
   position: absolute;
   top: 100%;
   left: 0;
-  background: #1e293b;
+  background: #1E293B;
   min-width: max-content;
   list-style: none;
   margin: 0;
-  padding: 0.25rem 0;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 0 0 8px 8px;
+  padding: 4px 0;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
   z-index: 100;
 `;
 
@@ -195,7 +194,7 @@ const NavDropdownLink = styled(Link)`
 `;
 
 const MainContent = styled.main`
-  padding: 2rem;
+  padding: 24px 32px;
 `;
 
 // 管理者アプリケーションコンポーネント
