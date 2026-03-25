@@ -179,7 +179,7 @@ const StaffMasterPage = () => {
 
   return (
     <PageContainer>
-      <Title>人管理</Title>
+      <Title>担当者管理</Title>
       <SectionGrid>
         {/* 運用者リスト */}
         <Section>

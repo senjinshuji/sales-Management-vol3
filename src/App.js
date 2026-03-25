@@ -24,6 +24,7 @@ import ProposalMenuMasterPage from './components/ProposalMenuMasterPage.js';
 import LeadSourceMasterPage from './components/LeadSourceMasterPage.js';
 import ProjectManagementPage from './components/ProjectManagementPage.js';
 import ClosedDealsList from './components/ClosedDealsList.js';
+import OperatorDashboard from './components/OperatorDashboard.js';
 import { UndoProvider } from './contexts/UndoContext.js';
 import authService from './services/authService.js';
 import './App.css';
@@ -33,11 +34,16 @@ const AppContainer = styled.div`
   background-color: #f8f9fa;
 `;
 
+const HeaderWrapper = styled.div`
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+`;
+
 const Header = styled.header`
-  background-color: #2c3e50;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
   color: white;
-  padding: 1rem 2rem;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  padding: 0.75rem 2rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -45,8 +51,12 @@ const Header = styled.header`
 
 const Title = styled.h1`
   margin: 0;
-  font-size: 1.5rem;
-  font-weight: 600;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  background: linear-gradient(90deg, #e2e8f0, #94a3b8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 `;
 
 const UserInfo = styled.div`
@@ -56,33 +66,34 @@ const UserInfo = styled.div`
 `;
 
 const UserText = styled.span`
-  font-size: 0.9rem;
-  color: #bdc3c7;
+  font-size: 0.8rem;
+  color: #94a3b8;
 `;
 
 const LogoutButton = styled.button`
-  background: none;
-  border: 1px solid #34495e;
-  color: white;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  padding: 0.4rem 0.85rem;
+  border-radius: 6px;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.9rem;
-  transition: all 0.3s ease;
-  
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  transition: all 0.2s ease;
+
   &:hover {
-    background-color: #34495e;
-    border-color: #3498db;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border-color: rgba(255, 255, 255, 0.2);
   }
 `;
 
 const NavContainer = styled.nav`
-  background-color: #34495e;
-  padding: 0 2rem;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  background: #1e293b;
+  padding: 0 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 `;
 
 const NavList = styled.ul`
@@ -100,29 +111,29 @@ const NavItem = styled.li`
 const NavLink = styled(Link)`
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 1rem 1.5rem;
-  color: #bdc3c7;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  color: #94a3b8;
   text-decoration: none;
   font-weight: 500;
-  transition: all 0.3s ease;
-  border-bottom: 3px solid transparent;
-  
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+  border-bottom: 2px solid transparent;
+
   &:hover {
-    background-color: #2c3e50;
-    color: white;
+    color: #e2e8f0;
+    background: rgba(255, 255, 255, 0.04);
   }
-  
+
   &.active {
-    background-color: #2c3e50;
-    border-bottom-color: #3498db;
+    border-bottom-color: #3b82f6;
     color: white;
   }
 `;
 
 const NavDropdown = styled.div`
   position: relative;
-  
+
   &:hover > ul {
     display: block;
   }
@@ -131,16 +142,17 @@ const NavDropdown = styled.div`
 const NavDropdownButton = styled.div`
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 1rem 1.5rem;
-  color: #bdc3c7;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  color: #94a3b8;
   font-weight: 500;
+  font-size: 0.85rem;
   cursor: pointer;
-  transition: all 0.3s ease;
-  
+  transition: all 0.2s ease;
+
   &:hover {
-    background-color: #2c3e50;
-    color: white;
+    color: #e2e8f0;
+    background: rgba(255, 255, 255, 0.04);
   }
 `;
 
@@ -149,12 +161,14 @@ const NavDropdownMenu = styled.ul`
   position: absolute;
   top: 100%;
   left: 0;
-  background: #2c3e50;
-  min-width: 200px;
+  background: #1e293b;
+  min-width: max-content;
   list-style: none;
   margin: 0;
-  padding: 0;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  padding: 0.25rem 0;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0 0 8px 8px;
   z-index: 100;
 `;
 
@@ -165,15 +179,17 @@ const NavDropdownItem = styled.li`
 const NavDropdownLink = styled(Link)`
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1.5rem;
-  color: #bdc3c7;
+  gap: 0.5rem;
+  padding: 0.6rem 1.25rem;
+  color: #94a3b8;
   text-decoration: none;
-  transition: all 0.2s ease;
-  
+  font-size: 0.85rem;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+
   &:hover {
-    background-color: #34495e;
-    color: white;
+    background: rgba(59, 130, 246, 0.1);
+    color: #e2e8f0;
   }
 `;
 
@@ -227,6 +243,7 @@ function AdminApp() {
   return (
     <UndoProvider>
       <AppContainer>
+        <HeaderWrapper>
         <Header>
         <Title>営業進捗管理ツール</Title>
         <UserInfo>
@@ -301,6 +318,12 @@ function AdminApp() {
             </NavDropdownMenu>
           </NavDropdown>
           <NavItem>
+            <NavLink to="/operator-dashboard">
+              <FiUser />
+              運用管理
+            </NavLink>
+          </NavItem>
+          <NavItem>
             <NavLink to="/next-action-management">
               <FiClipboard />
               NA管理
@@ -345,13 +368,14 @@ function AdminApp() {
               <NavDropdownItem>
                 <NavDropdownLink to="/staff-master">
                   <FiUser />
-                  人管理
+                  担当者管理
                 </NavDropdownLink>
               </NavDropdownItem>
             </NavDropdownMenu>
           </NavDropdown>
         </NavList>
       </NavContainer>
+      </HeaderWrapper>
 
       <MainContent>
         <Breadcrumb />
@@ -375,6 +399,7 @@ function AdminApp() {
           <Route path="/project-management" element={<ProjectManagementPage />} />
           <Route path="/staff-master" element={<StaffMasterPage />} />
           <Route path="/next-action-management" element={<NextActionManagementPage />} />
+          <Route path="/operator-dashboard" element={<OperatorDashboard />} />
         </Routes>
       </MainContent>
       </AppContainer>
