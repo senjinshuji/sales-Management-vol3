@@ -385,6 +385,7 @@ function OperatorDashboard() {
                 operatorRep: data.operatorRep || '',
                 startDate: data.startDate || '',
                 endDate: data.endDate || '',
+                budget: typeof data.budget === 'string' ? Number(data.budget) || 0 : data.budget || 0,
               });
             }
           });
@@ -550,7 +551,7 @@ function OperatorDashboard() {
       return true;
     });
 
-    const header = '商材名,担当者,クライアント,案件開始日,案件終了日';
+    const header = '商材名,担当者,クライアント,案件開始日,案件終了日,予算';
     const rows = filtered.map(d => {
       const cols = [
         d.productName || '',
@@ -558,6 +559,7 @@ function OperatorDashboard() {
         d.companyName || '',
         d.startDate || '',
         d.endDate || '実施中',
+        d.budget || 0,
       ];
       return cols.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',');
     });
