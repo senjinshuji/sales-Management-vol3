@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import styled from 'styled-components';
-import { FiUser, FiCalendar, FiCheck, FiEdit2, FiTarget } from 'react-icons/fi';
+import { FiUser, FiCalendar, FiCheck, FiEdit2, FiTarget, FiDownload } from 'react-icons/fi';
 import { db } from '../firebase.js';
 import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
 import { fetchStaffByRole } from '../services/staffService.js';
@@ -244,6 +244,22 @@ const EmptyMessage = styled.div`
   font-size: 0.9rem;
 `;
 
+const CsvButton = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 1rem;
+  border: none;
+  border-radius: 6px;
+  background: #27ae60;
+  color: white;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  &:hover { background: #219a52; }
+`;
+
 const LoadingMessage = styled.div`
   text-align: center;
   padding: 3rem;
@@ -288,6 +304,8 @@ function OperatorDashboard() {
 
   // 既存案件データ
   const [existingDeals, setExistingDeals] = useState([]);
+  // CSV出力用：全案件（ステータス不問）
+  const [allCsvDeals, setAllCsvDeals] = useState([]);
   // 新規案件（Phase 2-7）
   const [pipelineDeals, setPipelineDeals] = useState([]);
 
@@ -350,6 +368,29 @@ function OperatorDashboard() {
         }
       }));
       setExistingDeals(enrichedDeals);
+
+      // CSV用: 全既存案件の全salesRecordを施策単位で取得
+      const csvAllTargets = allDeals.filter(d => d.isExistingProject === true);
+      const csvRows = [];
+      await Promise.all(csvAllTargets.map(async (deal) => {
+        try {
+          const salesSnap = await getDocs(
+            collection(db, 'progressDashboard', deal.id, 'salesRecords')
+          );
+          salesSnap.forEach(rec => {
+            const data = rec.data();
+            if (data.startDate) {
+              csvRows.push({
+                ...deal,
+                operatorRep: data.operatorRep || '',
+                startDate: data.startDate || '',
+                endDate: data.endDate || '',
+              });
+            }
+          });
+        } catch (err) { /* skip */ }
+      }));
+      setAllCsvDeals(csvRows);
 
       // 新規案件（Phase 2-7）
       const pipeline = allDeals.filter(d =>
@@ -494,6 +535,44 @@ function OperatorDashboard() {
     fetchData();
   };
 
+  // 月別実施案件CSV出力
+  const handleCsvExport = () => {
+    if (!selectedMonth) return;
+    const [y, m] = selectedMonth.split('-').map(Number);
+    const monthStart = `${selectedMonth}-01`;
+    const monthEnd = new Date(y, m, 0);
+    const monthEndStr = `${y}-${String(m).padStart(2, '0')}-${String(monthEnd.getDate()).padStart(2, '0')}`;
+
+    const filtered = allCsvDeals.filter(d => {
+      if (!d.startDate) return false;
+      if (d.startDate > monthEndStr) return false;
+      if (d.endDate && d.endDate < monthStart) return false;
+      return true;
+    });
+
+    const header = '商材名,担当者,クライアント,案件開始日,案件終了日';
+    const rows = filtered.map(d => {
+      const cols = [
+        d.productName || '',
+        d.operatorRep || '',
+        d.companyName || '',
+        d.startDate || '',
+        d.endDate || '実施中',
+      ];
+      return cols.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',');
+    });
+
+    const bom = '\uFEFF';
+    const csv = bom + [header, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `実施案件一覧_${selectedMonth}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // テーブル行レンダリング（パート1・2共通）
   const renderDealRow = (deal) => (
     <ClickableRow key={deal.id} onClick={() => handleRowClick(deal)}>
@@ -605,6 +684,10 @@ function OperatorDashboard() {
                   <option key={opt.val} value={opt.val}>{opt.label}</option>
                 ))}
               </Select>
+              <CsvButton onClick={handleCsvExport}>
+                <FiDownload size={14} />
+                月別実施案件CSV
+              </CsvButton>
               {selectedOperator && (
                 <>
                   <TargetMetric>
