@@ -749,7 +749,6 @@ function ExistingDealsDashboard() {
       setAllSalesRecords(allSalesRecords);
       setRawDeals(existingDeals);
       setRawSalesRecords(allSalesRecords);
-      calculateStats(existingDeals, allSalesRecords, selectedQuarter);
     } catch (error) {
       console.error('データ取得エラー:', error);
     } finally {
@@ -915,22 +914,20 @@ function ExistingDealsDashboard() {
 
   useEffect(() => {
     fetchData();
-    fetchTarget();
-    // スタッフマスターから営業者リストを取得
     fetchStaffByRole('sales').then(staff => {
       setSalesRepList(staff.map(s => s.name));
     }).catch(err => {
       console.error('営業者リスト取得エラー:', err);
     });
-  }, [fetchData, fetchTarget, location.key]);
+  }, [fetchData, location.key]);
 
-  // 四半期変更時に再計算 + 目標再取得
+  // データ取得後 or 四半期変更時に再計算 + 目標再取得
   useEffect(() => {
     if (rawDeals.length > 0 || rawSalesRecords.length > 0) {
       calculateStats(rawDeals, rawSalesRecords, selectedQuarter);
     }
     fetchTarget();
-  }, [selectedQuarter]);
+  }, [selectedQuarter, rawDeals, rawSalesRecords]);
 
   // 担当者リストを取得（スタッフマスターから + salesRecordsのデータ）
   const representativeList = useMemo(() => {
