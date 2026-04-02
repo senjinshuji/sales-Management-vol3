@@ -378,44 +378,61 @@ const formatCurrency = (value) => {
   return '¥' + value.toLocaleString();
 };
 
-const getQuarterRange = () => {
-  const now = new Date();
-  const month = now.getMonth(); // 0-11
-  const year = now.getFullYear();
-
-  let startMonth, endMonth, displayYear;
-  if (month < 3) {
-    // 1-3月
-    startMonth = 0; endMonth = 2;
-    displayYear = year;
-  } else if (month < 6) {
-    // 4-6月
-    startMonth = 3; endMonth = 5;
-    displayYear = year;
-  } else if (month < 9) {
-    // 7-9月
-    startMonth = 6; endMonth = 8;
-    displayYear = year;
-  } else {
-    // 10-12月
-    startMonth = 9; endMonth = 11;
-    displayYear = year;
+const getQuarterRange = (quarterKey) => {
+  if (quarterKey) {
+    const [y, q] = quarterKey.split('-Q').map(Number);
+    const startMonth = (q - 1) * 3;
+    const endMonth = startMonth + 2;
+    return {
+      start: new Date(y, startMonth, 1),
+      end: new Date(y, endMonth + 1, 0),
+      label: `${y}年${startMonth + 1}月〜${endMonth + 1}月`
+    };
   }
-
+  const now = new Date();
+  const month = now.getMonth();
+  const year = now.getFullYear();
+  let startMonth, endMonth;
+  if (month < 3) { startMonth = 0; endMonth = 2; }
+  else if (month < 6) { startMonth = 3; endMonth = 5; }
+  else if (month < 9) { startMonth = 6; endMonth = 8; }
+  else { startMonth = 9; endMonth = 11; }
   return {
-    start: new Date(displayYear, startMonth, 1),
-    end: new Date(displayYear, endMonth + 1, 0),
-    label: `${displayYear}年${startMonth + 1}月〜${endMonth + 1}月`
+    start: new Date(year, startMonth, 1),
+    end: new Date(year, endMonth + 1, 0),
+    label: `${year}年${startMonth + 1}月〜${endMonth + 1}月`
   };
 };
 
-const getCurrentMonthRange = () => {
+const getCurrentMonthRange = (quarterKey) => {
+  if (quarterKey) {
+    const [y, q] = quarterKey.split('-Q').map(Number);
+    const endMonth = (q - 1) * 3 + 2;
+    return {
+      start: new Date(y, endMonth, 1),
+      end: new Date(y, endMonth + 1, 0),
+      label: `${y}年${endMonth + 1}月`
+    };
+  }
   const now = new Date();
   return {
     start: new Date(now.getFullYear(), now.getMonth(), 1),
     end: new Date(now.getFullYear(), now.getMonth() + 1, 0),
     label: `${now.getFullYear()}年${now.getMonth() + 1}月`
   };
+};
+
+const generateQuarterOptions = () => {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentQ = Math.ceil((now.getMonth() + 1) / 3);
+  const options = [];
+  for (let y = currentYear - 2; y <= currentYear + 1; y++) {
+    for (let q = 1; q <= 4; q++) {
+      options.push({ value: `${y}-Q${q}`, label: `${y}年 Q${q}（${(q-1)*3+1}〜${q*3}月）` });
+    }
+  }
+  return { options, current: `${currentYear}-Q${currentQ}` };
 };
 
 // メーターグラフコンポーネント
@@ -603,6 +620,10 @@ function NewDealsDashboard() {
   const [deals, setDeals] = useState([]);
   const [quarterTarget, setQuarterTarget] = useState(10000000); // デフォルト目標値
   const [selectedRepresentative, setSelectedRepresentative] = useState(''); // 担当者サマリー用
+  const { options: quarterOptions, current: currentQuarterKey } = useMemo(() => generateQuarterOptions(), []);
+  const [selectedQuarter, setSelectedQuarter] = useState(currentQuarterKey);
+  const [rawNewDeals, setRawNewDeals] = useState([]);
+  const [rawSalesRecords, setRawSalesRecords] = useState([]);
 
   // 計算結果のstate
   const [quarterActual, setQuarterActual] = useState(0);
@@ -624,12 +645,7 @@ function NewDealsDashboard() {
   const [editingTarget, setEditingTarget] = useState('');
 
   // 四半期のキーを取得（目標値保存用）
-  const getQuarterKey = () => {
-    const quarter = getQuarterRange();
-    const year = quarter.start.getFullYear();
-    const startMonth = quarter.start.getMonth() + 1;
-    return `${year}-Q${Math.ceil(startMonth / 3)}`;
-  };
+  const getQuarterKey = () => selectedQuarter;
 
   // 目標値をFirestoreから取得
   const fetchTarget = useCallback(async () => {
@@ -644,7 +660,7 @@ function NewDealsDashboard() {
     } catch (error) {
       console.error('目標値取得エラー:', error);
     }
-  }, []);
+  }, [selectedQuarter]);
 
   // 目標値をFirestoreに保存
   const saveTarget = async () => {
@@ -735,7 +751,9 @@ function NewDealsDashboard() {
       setDeals(newDeals);
       setExistingDeals(existingDealsList);
       setAllSalesRecords(allSalesRecords);
-      calculateStats(newDeals, allSalesRecords);
+      setRawNewDeals(newDeals);
+      setRawSalesRecords(allSalesRecords);
+      calculateStats(newDeals, allSalesRecords, selectedQuarter);
     } catch (error) {
       console.error('データ取得エラー:', error);
     } finally {
@@ -744,9 +762,9 @@ function NewDealsDashboard() {
   }, []);
 
   // 統計計算（新規案件リスト + 既存案件のsalesRecordsを使用）
-  const calculateStats = useCallback((newDealsList, salesRecords) => {
-    const quarter = getQuarterRange();
-    const currentMonth = getCurrentMonthRange();
+  const calculateStats = useCallback((newDealsList, salesRecords, quarterKey) => {
+    const quarter = getQuarterRange(quarterKey);
+    const currentMonth = getCurrentMonthRange(quarterKey);
     const now = new Date();
 
     // ヘルパー: salesRecordsから「新規」ラベルかつdateが期間内のレコードを抽出
@@ -910,6 +928,14 @@ function NewDealsDashboard() {
     });
   }, [fetchData, fetchTarget, location.key]);
 
+  // 四半期変更時に再計算 + 目標再取得
+  useEffect(() => {
+    if (rawNewDeals.length > 0 || rawSalesRecords.length > 0) {
+      calculateStats(rawNewDeals, rawSalesRecords, selectedQuarter);
+    }
+    fetchTarget();
+  }, [selectedQuarter]);
+
   // 担当者リストを取得（スタッフマスターから）
   const representativeList = useMemo(() => {
     const repsInData = new Set();
@@ -1036,13 +1062,22 @@ function NewDealsDashboard() {
     );
   }
 
-  const quarter = getQuarterRange();
-  const currentMonth = getCurrentMonthRange();
+  const quarter = getQuarterRange(selectedQuarter);
+  const currentMonth = getCurrentMonthRange(selectedQuarter);
 
   return (
     <DashboardContainer>
       <Header>
         <Title>新規案件ダッシュボード</Title>
+        <select
+          value={selectedQuarter}
+          onChange={(e) => setSelectedQuarter(e.target.value)}
+          style={{ padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid #ddd', fontSize: '0.9rem', background: 'white' }}
+        >
+          {quarterOptions.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
       </Header>
 
       {/* 1行目: 四半期実績 & 月間実績 */}
