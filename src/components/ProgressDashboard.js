@@ -1105,8 +1105,8 @@ function ProgressDashboard() {
       const dealRef = doc(db, 'progressDashboard', selectedDeal.id);
       await updateDoc(dealRef, {
         status: 'フェーズ8',
-        confirmedDate: new Date().toISOString().split('T')[0],
-        receivedOrderMonth: orderData.receivedOrderMonth,
+        confirmedDate: orderData.receivedOrderDate || new Date().toISOString().split('T')[0],
+        receivedOrderDate: orderData.receivedOrderDate,
         receivedOrderAmount: orderData.receivedOrderAmount,
         updatedAt: serverTimestamp()
       });
@@ -1122,8 +1122,8 @@ function ProgressDashboard() {
         expectedBudget: orderData.receivedOrderAmount,
         rank: selectedDeal.rank || '',
         isExistingProject: true,
-        confirmedDate: new Date().toISOString().split('T')[0],
-        receivedOrderMonth: orderData.receivedOrderMonth,
+        confirmedDate: orderData.receivedOrderDate || new Date().toISOString().split('T')[0],
+        receivedOrderDate: orderData.receivedOrderDate,
         receivedOrderAmount: orderData.receivedOrderAmount,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
@@ -1133,6 +1133,7 @@ function ProgressDashboard() {
       await addSalesRecord(existingRef.id, {
         phase: 'フェーズ8',
         budget: orderData.receivedOrderAmount,
+        confirmedDate: orderData.receivedOrderDate || new Date().toISOString().split('T')[0],
         date: new Date().toISOString().split('T')[0],
         salesRep: orderData.salesRep || '',
         operatorRep: orderData.operatorRep || '',

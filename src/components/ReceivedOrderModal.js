@@ -14,6 +14,8 @@ const ModalOverlay = styled.div`
   align-items: center;
   justify-content: center;
   z-index: 2000;
+  padding: 2rem 0;
+  overflow-y: auto;
 `;
 
 const ModalContent = styled.div`
@@ -22,6 +24,8 @@ const ModalContent = styled.div`
   border-radius: 12px;
   max-width: 500px;
   width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
   box-shadow: 0 10px 25px rgba(0,0,0,0.2);
   animation: modalSlideIn 0.3s ease-out;
   
@@ -249,7 +253,7 @@ function ReceivedOrderModal({
   };
 
   const [formData, setFormData] = useState({
-    receivedOrderMonth: new Date().toISOString().slice(0, 7),
+    receivedOrderDate: new Date().toISOString().split('T')[0],
     receivedOrderAmount: getInitialAmount(),
     startDate: '',
     endDate: '',
@@ -308,8 +312,8 @@ function ReceivedOrderModal({
   const validateForm = () => {
     const newErrors = {};
     
-    if (!formData.receivedOrderMonth) {
-      newErrors.receivedOrderMonth = '受注月は必須です';
+    if (!formData.receivedOrderDate) {
+      newErrors.receivedOrderDate = '受注日は必須です';
     }
     
     if (!formData.receivedOrderAmount) {
@@ -333,7 +337,7 @@ function ReceivedOrderModal({
     try {
       await onSave({
         dealId: deal.id,
-        receivedOrderMonth: formData.receivedOrderMonth,
+        receivedOrderDate: formData.receivedOrderDate,
         receivedOrderAmount: Number(formData.receivedOrderAmount),
         startDate: formData.startDate,
         endDate: formData.endDate,
@@ -358,7 +362,7 @@ function ReceivedOrderModal({
   // キャンセル処理
   const handleCancel = () => {
     setFormData({
-      receivedOrderMonth: new Date().toISOString().slice(0, 7),
+      receivedOrderDate: new Date().toISOString().split('T')[0],
       receivedOrderAmount: '',
       startDate: '',
       endDate: '',
@@ -404,18 +408,18 @@ function ReceivedOrderModal({
           <FormGroup>
             <Label>
               <FiCalendar />
-              受注月 *
+              受注日 *
             </Label>
             <Input
-              type="month"
-              name="receivedOrderMonth"
-              value={formData.receivedOrderMonth}
+              type="date"
+              name="receivedOrderDate"
+              value={formData.receivedOrderDate}
               onChange={handleInputChange}
-              className={errors.receivedOrderMonth ? 'error' : ''}
+              className={errors.receivedOrderDate ? 'error' : ''}
               disabled={isLoading}
             />
-            {errors.receivedOrderMonth && (
-              <ErrorMessage>{errors.receivedOrderMonth}</ErrorMessage>
+            {errors.receivedOrderDate && (
+              <ErrorMessage>{errors.receivedOrderDate}</ErrorMessage>
             )}
           </FormGroup>
 
