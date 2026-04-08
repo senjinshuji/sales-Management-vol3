@@ -781,6 +781,12 @@ const NextActionManagementPage = () => {
   const [reviewModal, setReviewModal] = useState(null); // { na, targetColumnId }
   const [staffList, setStaffList] = useState([]);
 
+  // 次のNA入力モーダル（レビュー待ち移動後）
+  const [nextNaModal, setNextNaModal] = useState(null); // { na } - 元のNA情報
+  const [nextNaContent, setNextNaContent] = useState('');
+  const [nextNaDueDate, setNextNaDueDate] = useState('');
+  const [nextNaSaving, setNextNaSaving] = useState(false);
+
   // URLコピー済みフラグ
   const [copiedUrl, setCopiedUrl] = useState(false);
 
@@ -953,6 +959,33 @@ const NextActionManagementPage = () => {
     const { na } = reviewModal;
     await updateNaStatus(na, STATUS_REVIEWING, { reviewAssignee: staffName });
     setReviewModal(null);
+    // 次のNA入力モーダルを表示
+    setNextNaContent('');
+    setNextNaDueDate('');
+    setNextNaModal({ na });
+  };
+
+  // 次のNA保存
+  const handleSaveNextNa = async () => {
+    if (!nextNaModal || !nextNaContent.trim() || !nextNaDueDate) return;
+    setNextNaSaving(true);
+    try {
+      const { na } = nextNaModal;
+      await addSalesEntry(na.projectId, na.recordId, {
+        memoContent: '',
+        actionContent: nextNaContent.trim(),
+        actionDueDate: nextNaDueDate,
+        actionAssignee: na.actionAssignee || '',
+        actionStatus: STATUS_ACTIVE,
+      }, na.subCol || 'salesRecords');
+      await loadNas();
+      setNextNaModal(null);
+    } catch (error) {
+      console.error('次のNA追加エラー:', error);
+      alert('次のNAの追加に失敗しました');
+    } finally {
+      setNextNaSaving(false);
+    }
   };
 
   // --- NA削除 ---
@@ -1401,6 +1434,47 @@ const NextActionManagementPage = () => {
               <EmptyText>営業スタッフが登録されていません</EmptyText>
             )}
             <ModalCancelBtn onClick={() => setReviewModal(null)}>キャンセル</ModalCancelBtn>
+          </ModalBox>
+        </ModalOverlay>
+      )}
+
+      {/* 次のNA入力モーダル */}
+      {nextNaModal && (
+        <ModalOverlay onClick={() => setNextNaModal(null)}>
+          <ModalBox onClick={e => e.stopPropagation()} style={{ maxWidth: '450px' }}>
+            <ModalTitle>次のネクストアクションを入力</ModalTitle>
+            <div style={{ padding: '0.5rem 0', marginBottom: '0.75rem', fontSize: '0.85rem', color: '#666', borderBottom: '1px solid #eee' }}>
+              {nextNaModal.na.companyName && <span style={{ fontWeight: 600, color: '#2c3e50' }}>{nextNaModal.na.companyName}</span>}
+              {nextNaModal.na.productName && <span> - {nextNaModal.na.productName}</span>}
+            </div>
+            <div style={{ marginBottom: '0.75rem' }}>
+              <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '0.25rem' }}>NA内容 *</div>
+              <textarea
+                value={nextNaContent}
+                onChange={(e) => setNextNaContent(e.target.value)}
+                placeholder="次のアクション内容..."
+                style={{ width: '100%', minHeight: '80px', padding: '0.5rem', border: '1px solid #ddd', borderRadius: '6px', fontSize: '0.9rem', resize: 'vertical', fontFamily: 'inherit' }}
+              />
+            </div>
+            <div style={{ marginBottom: '1rem' }}>
+              <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '0.25rem' }}>期日 *</div>
+              <input
+                type="date"
+                value={nextNaDueDate}
+                onChange={(e) => setNextNaDueDate(e.target.value)}
+                style={{ padding: '0.5rem', border: '1px solid #ddd', borderRadius: '6px', fontSize: '0.9rem', width: '100%' }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <ModalCancelBtn onClick={() => setNextNaModal(null)}>不要</ModalCancelBtn>
+              <button
+                onClick={handleSaveNextNa}
+                disabled={!nextNaContent.trim() || !nextNaDueDate || nextNaSaving}
+                style={{ padding: '0.5rem 1.25rem', border: 'none', borderRadius: '6px', background: '#3498db', color: 'white', fontWeight: 600, cursor: 'pointer', fontSize: '0.85rem', opacity: (!nextNaContent.trim() || !nextNaDueDate || nextNaSaving) ? 0.5 : 1 }}
+              >
+                {nextNaSaving ? '保存中...' : '追加'}
+              </button>
+            </div>
           </ModalBox>
         </ModalOverlay>
       )}
