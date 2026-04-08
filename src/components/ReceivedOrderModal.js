@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import { FiCalendar, FiDollarSign, FiSave, FiX, FiUser } from 'react-icons/fi';
+import { FiCalendar, FiDollarSign, FiSave, FiX, FiUser, FiSend } from 'react-icons/fi';
 import { fetchAllStaff } from '../services/staffService.js';
 
 const ModalOverlay = styled.div`
@@ -206,6 +206,32 @@ const SuccessIcon = styled.div`
   margin-bottom: 1rem;
 `;
 
+const SLACK_WEBHOOK_URL = process.env.REACT_APP_SLACK_WEBHOOK_URL || '';
+
+const sendContractRequestToSlack = async (deal, contractData) => {
+  const templateHolder = contractData.contractTemplateHolder === 'ours' ? '弊社' : '先方';
+  const text = `📝 *契約書締結依頼*\n\n` +
+    `*会社名:* ${deal.companyName || deal.productName}\n` +
+    `*商材:* ${deal.productName}\n` +
+    `*連絡グループ:* ${contractData.contactGroup}\n` +
+    `*契約雛形:* ${templateHolder}が保有\n` +
+    `*契約内容:*\n${contractData.contractDetails}\n` +
+    `*受注金額:* ¥${Number(contractData.amount).toLocaleString()}`;
+
+  try {
+    await fetch(SLACK_WEBHOOK_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    return true;
+  } catch (error) {
+    console.error('Slack送信エラー:', error);
+    return false;
+  }
+};
+
 function ReceivedOrderModal({
   isOpen,
   onClose,
@@ -222,12 +248,15 @@ function ReceivedOrderModal({
   };
 
   const [formData, setFormData] = useState({
-    receivedOrderMonth: new Date().toISOString().slice(0, 7), // YYYY-MM形式、デフォルトは今月
+    receivedOrderMonth: new Date().toISOString().slice(0, 7),
     receivedOrderAmount: getInitialAmount(),
     startDate: '',
     endDate: '',
     salesRep: '',
-    operatorRep: ''
+    operatorRep: '',
+    contactGroup: '',
+    contractTemplateHolder: 'ours',
+    contractDetails: '',
   });
   const [errors, setErrors] = useState({});
   const [staffList, setStaffList] = useState([]);
@@ -310,6 +339,16 @@ function ReceivedOrderModal({
         salesRep: formData.salesRep,
         operatorRep: formData.operatorRep
       });
+
+      // Slack契約書締結依頼送信
+      if (formData.contactGroup || formData.contractDetails) {
+        await sendContractRequestToSlack(deal, {
+          contactGroup: formData.contactGroup,
+          contractTemplateHolder: formData.contractTemplateHolder,
+          contractDetails: formData.contractDetails,
+          amount: formData.receivedOrderAmount,
+        });
+      }
     } catch (error) {
       console.error('受注情報保存エラー:', error);
     }
@@ -323,7 +362,10 @@ function ReceivedOrderModal({
       startDate: '',
       endDate: '',
       salesRep: '',
-      operatorRep: ''
+      operatorRep: '',
+      contactGroup: '',
+      contractTemplateHolder: 'ours',
+      contractDetails: '',
     });
     setErrors({});
     onClose();
@@ -470,6 +512,59 @@ function ReceivedOrderModal({
             </Select>
           </FormGroup>
 
+          <div style={{ borderTop: '2px solid #e9ecef', paddingTop: '1rem', marginTop: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#3498db', fontWeight: 600 }}>
+              <FiSend />
+              契約書締結依頼（Slack送信）
+            </div>
+
+            <FormGroup>
+              <Label>連絡グループ</Label>
+              <Input
+                type="text"
+                name="contactGroup"
+                value={formData.contactGroup}
+                onChange={handleInputChange}
+                placeholder="例：Slackグループ名、メールグループ等"
+                disabled={isLoading}
+              />
+            </FormGroup>
+
+            <FormGroup>
+              <Label>契約雛形</Label>
+              <Select
+                name="contractTemplateHolder"
+                value={formData.contractTemplateHolder}
+                onChange={handleInputChange}
+                disabled={isLoading}
+              >
+                <option value="ours">弊社が保有</option>
+                <option value="theirs">先方が保有</option>
+              </Select>
+            </FormGroup>
+
+            <FormGroup>
+              <Label>契約内容</Label>
+              <textarea
+                name="contractDetails"
+                value={formData.contractDetails}
+                onChange={handleInputChange}
+                placeholder="契約の概要を簡単に記入..."
+                disabled={isLoading}
+                style={{
+                  width: '100%',
+                  minHeight: '80px',
+                  padding: '0.75rem',
+                  border: '2px solid #e9ecef',
+                  borderRadius: '8px',
+                  fontSize: '1rem',
+                  resize: 'vertical',
+                  fontFamily: 'inherit',
+                }}
+              />
+            </FormGroup>
+          </div>
+
           <ButtonGroup>
             <Button
               type="button"
@@ -480,8 +575,8 @@ function ReceivedOrderModal({
               <FiX />
               キャンセル
             </Button>
-            <Button 
-              type="submit" 
+            <Button
+              type="submit"
               className="primary"
               disabled={isLoading}
             >
