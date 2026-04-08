@@ -900,7 +900,27 @@ function HomeDashboard() {
     setMonthForecast(monthForecastData);
 
     // 6. クライアント別獲得予算（四半期実績と同じロジック: salesRecordsのdateベース）
-    const allQuarterRecords = [...quarterNewRecords, ...quarterExistingRecords];
+    // デバッグ: recordType別の集計を確認
+    const quarterAllPhase8 = salesRecords.filter(rec => {
+      if (rec.phase !== 'フェーズ8') return false;
+      if (!rec.date) return false;
+      const recDate = new Date(rec.date);
+      return recDate >= quarter.start && recDate <= quarter.end;
+    });
+    const typeBreakdown = {};
+    quarterAllPhase8.forEach(rec => {
+      const t = rec.recordType || '(空)';
+      if (!typeBreakdown[t]) typeBreakdown[t] = { count: 0, budget: 0 };
+      typeBreakdown[t].count += 1;
+      typeBreakdown[t].budget += rec.budget;
+    });
+    console.log('=== クライアント別デバッグ ===');
+    console.log('recordType別内訳:', typeBreakdown);
+    console.log('新規合計:', quarterNewRecords.reduce((s, r) => s + r.budget, 0));
+    console.log('継続合計:', quarterExistingRecords.reduce((s, r) => s + r.budget, 0));
+    console.log('全Phase8合計:', quarterAllPhase8.reduce((s, r) => s + r.budget, 0));
+
+    const allQuarterRecords = quarterAllPhase8; // recordType不問で全フェーズ8を使用
     const clientMap = {};
     allQuarterRecords.forEach(rec => {
       const name = rec.companyName || '不明';
