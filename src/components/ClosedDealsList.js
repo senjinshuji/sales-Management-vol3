@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import styled from 'styled-components';
-import { FiCalendar, FiSearch, FiChevronUp, FiChevronDown } from 'react-icons/fi';
+import { FiCalendar, FiSearch, FiChevronUp, FiChevronDown, FiCheck } from 'react-icons/fi';
 import { db } from '../firebase.js';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import ProjectDetailPanel from './ProjectDetailPanel.js';
 
 const Container = styled.div`
@@ -201,6 +201,8 @@ function ClosedDealsList() {
   const [sortDir, setSortDir] = useState('asc');
   const [selectedProject, setSelectedProject] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
+  const [editingId, setEditingId] = useState(null);
+  const [editingConfirmedDate, setEditingConfirmedDate] = useState('');
 
   const fetchData = useCallback(async () => {
     try {
@@ -234,6 +236,7 @@ function ClosedDealsList() {
               id: `${deal.id}_${rec.id}`,
               dealId: deal.id,
               date: rd.date || '',
+              confirmedDate: deal.confirmedDate || '',
               recordType: rd.recordType || '新規',
               companyName: deal.companyName || '',
               productName: deal.productName || '',
@@ -259,6 +262,22 @@ function ClosedDealsList() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // 成約日の保存
+  const handleSaveConfirmedDate = async (rec) => {
+    try {
+      await updateDoc(doc(db, 'progressDashboard', rec.dealId), {
+        confirmedDate: editingConfirmedDate,
+      });
+      setRecords(prev => prev.map(r =>
+        r.dealId === rec.dealId ? { ...r, confirmedDate: editingConfirmedDate } : r
+      ));
+      setEditingId(null);
+    } catch (error) {
+      console.error('成約日保存エラー:', error);
+      alert('保存に失敗しました');
+    }
+  };
 
   // 担当者リスト（データから自動生成）
   const repList = useMemo(() => {
@@ -427,7 +446,8 @@ function ClosedDealsList() {
           <Table>
             <thead>
               <tr>
-                <Th $sortable onClick={() => handleSort('date')}>成約日{renderSortIcon('date')}</Th>
+                <Th $sortable onClick={() => handleSort('confirmedDate')}>成約日{renderSortIcon('confirmedDate')}</Th>
+                <Th $sortable onClick={() => handleSort('date')}>登録日{renderSortIcon('date')}</Th>
                 <Th $sortable onClick={() => handleSort('recordType')}>新規/既存{renderSortIcon('recordType')}</Th>
                 <Th $sortable onClick={() => handleSort('companyName')}>会社名{renderSortIcon('companyName')}</Th>
                 <Th $sortable onClick={() => handleSort('productName')}>商材名{renderSortIcon('productName')}</Th>
@@ -444,6 +464,33 @@ function ClosedDealsList() {
                     setSearchParams({ id: deal.id });
                   }
                 }}>
+                  <Td onClick={(e) => e.stopPropagation()}>
+                    {editingId === rec.id ? (
+                      <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                        <input
+                          type="date"
+                          value={editingConfirmedDate}
+                          onChange={(e) => setEditingConfirmedDate(e.target.value)}
+                          style={{ padding: '0.3rem', border: '1px solid #ddd', borderRadius: '4px', fontSize: '0.85rem' }}
+                        />
+                        <button
+                          onClick={() => handleSaveConfirmedDate(rec)}
+                          style={{ padding: '0.25rem 0.4rem', border: 'none', borderRadius: '4px', background: '#27ae60', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                        >
+                          <FiCheck size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <span
+                        onClick={() => { setEditingId(rec.id); setEditingConfirmedDate(rec.confirmedDate || ''); }}
+                        style={{ cursor: 'pointer', padding: '0.15rem 0.3rem', borderRadius: '3px' }}
+                        onMouseEnter={(e) => e.target.style.background = '#e8f4fd'}
+                        onMouseLeave={(e) => e.target.style.background = 'transparent'}
+                      >
+                        {rec.confirmedDate || '+ 入力'}
+                      </span>
+                    )}
+                  </Td>
                   <Td>{rec.date}</Td>
                   <Td><TypeBadge $type={rec.recordType}>{rec.recordType}</TypeBadge></Td>
                   <Td>{rec.companyName}</Td>

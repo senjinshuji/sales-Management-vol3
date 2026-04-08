@@ -734,6 +734,7 @@ function NewDealsDashboard() {
               dealId: deal.id,
               companyName: deal.companyName || '',
               productName: deal.productName || '',
+              confirmedDate: deal.confirmedDate || '',
               representative: latestRep,
               proposalMenu: deal.proposalMenu,
               leadSource: deal.leadSource,
@@ -766,13 +767,13 @@ function NewDealsDashboard() {
     const currentMonth = getCurrentMonthRange(quarterKey);
     const now = new Date();
 
-    // ヘルパー: salesRecordsから「新規」ラベルかつdateが期間内のレコードを抽出
+    // ヘルパー: salesRecordsから「新規」ラベルかつconfirmedDateが期間内のレコードを抽出
     const getNewLabelRecordsInRange = (start, end) => {
       return salesRecords.filter(rec => {
         if (rec.recordType !== '新規') return false;
         if (rec.phase !== 'フェーズ8') return false;
-        if (!rec.date) return false;
-        const recDate = new Date(rec.date);
+        if (!rec.confirmedDate) return false;
+        const recDate = new Date(rec.confirmedDate);
         return recDate >= start && recDate <= end;
       });
     };
