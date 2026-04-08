@@ -1108,6 +1108,7 @@ function ProgressDashboard() {
         confirmedDate: orderData.receivedOrderDate || new Date().toISOString().split('T')[0],
         receivedOrderDate: orderData.receivedOrderDate,
         receivedOrderAmount: orderData.receivedOrderAmount,
+        contractRequested: true,
         updatedAt: serverTimestamp()
       });
 
@@ -1125,6 +1126,7 @@ function ProgressDashboard() {
         confirmedDate: orderData.receivedOrderDate || new Date().toISOString().split('T')[0],
         receivedOrderDate: orderData.receivedOrderDate,
         receivedOrderAmount: orderData.receivedOrderAmount,
+        contractRequested: true,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
@@ -1328,6 +1330,7 @@ function ProgressDashboard() {
                 <TableHeaderCell $sortable onClick={() => handleSort('nextActionDate')}>
                   期日{renderSortIcon('nextActionDate')}
                 </TableHeaderCell>
+                <TableHeaderCell>締結</TableHeaderCell>
                 <TableHeaderCell style={{ width: '40px' }}></TableHeaderCell>
               </tr>
             </TableHead>
@@ -1413,6 +1416,13 @@ function ProgressDashboard() {
                           {renderDueDateBadge(latestNaDueDate)}
                         </>
                       )}
+                    </TableCell>
+                    <TableCell style={{ textAlign: 'center' }}>
+                      {deal.contractRequested ? (
+                        <span style={{ color: '#27ae60', fontWeight: 'bold' }}>✓</span>
+                      ) : displayPhase === 'フェーズ8' ? (
+                        <span style={{ color: '#999' }}>-</span>
+                      ) : ''}
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>

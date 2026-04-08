@@ -737,6 +737,7 @@ const ProjectManagementPage = () => {
                 <TableHeaderCell $sortable onClick={() => handleSort('latestNaDueDate')}>
                   期日{renderSortIcon('latestNaDueDate')}
                 </TableHeaderCell>
+                <TableHeaderCell>締結</TableHeaderCell>
                 <TableHeaderCell style={{ width: '40px' }}></TableHeaderCell>
               </tr>
             </TableHead>
@@ -794,6 +795,11 @@ const ProjectManagementPage = () => {
                   <TableCell>
                     {p.latestNaDueDate || '-'}
                     {renderDueDateBadge(p.latestNaDueDate)}
+                  </TableCell>
+                  <TableCell style={{ textAlign: 'center' }}>
+                    {p.contractRequested ? (
+                      <span style={{ color: '#27ae60', fontWeight: 'bold' }}>✓</span>
+                    ) : '-'}
                   </TableCell>
                   <TableCell onClick={e => e.stopPropagation()}>
                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>

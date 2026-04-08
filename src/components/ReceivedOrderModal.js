@@ -217,6 +217,7 @@ const sendContractRequestToSlack = async (deal, contractData) => {
   const text = `📝 *契約書締結依頼*\n\n` +
     `<@U018HC2JY1L> <@U018GS87H7Y>\n\n` +
     `*会社名:* ${deal.companyName || deal.productName}\n` +
+    `*事業部:* ${contractData.department || '未選択'}\n` +
     `*連絡グループ:* ${contractData.contactGroup}\n` +
     `*契約雛形:* ${templateHolder}が保有\n` +
     `*契約内容:*\n${contractData.contractDetails}`;
@@ -262,6 +263,7 @@ function ReceivedOrderModal({
     contactGroup: '',
     contractTemplateHolder: 'ours',
     contractDetails: '',
+    department: '',
   });
   const [errors, setErrors] = useState({});
   const [staffList, setStaffList] = useState([]);
@@ -351,7 +353,7 @@ function ReceivedOrderModal({
           contactGroup: formData.contactGroup,
           contractTemplateHolder: formData.contractTemplateHolder,
           contractDetails: formData.contractDetails,
-          amount: formData.receivedOrderAmount,
+          department: formData.department,
         });
       }
     } catch (error) {
@@ -371,6 +373,7 @@ function ReceivedOrderModal({
       contactGroup: '',
       contractTemplateHolder: 'ours',
       contractDetails: '',
+      department: '',
     });
     setErrors({});
     onClose();
@@ -522,6 +525,20 @@ function ReceivedOrderModal({
               <FiSend />
               契約書締結依頼（Slack送信）
             </div>
+
+            <FormGroup>
+              <Label>事業部 *</Label>
+              <Select
+                name="department"
+                value={formData.department}
+                onChange={handleInputChange}
+                disabled={isLoading}
+              >
+                <option value="">選択してください</option>
+                <option value="メディア">メディア</option>
+                <option value="広告">広告</option>
+              </Select>
+            </FormGroup>
 
             <FormGroup>
               <Label>連絡グループ</Label>
