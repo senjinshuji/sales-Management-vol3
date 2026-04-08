@@ -786,27 +786,21 @@ function HomeDashboard() {
       });
     };
 
-    // デバッグ: recordType別の内訳を確認
-    const allPhase8InQuarter = salesRecords.filter(rec => {
-      if (rec.phase !== 'フェーズ8') return false;
-      const d = rec.confirmedDate || rec.date;
-      if (!d) return false;
-      const recDate = new Date(d);
-      return recDate >= quarter.start && recDate <= quarter.end;
-    });
-    const typeMap = {};
-    allPhase8InQuarter.forEach(rec => {
-      const t = rec.recordType || '(空)';
-      if (!typeMap[t]) typeMap[t] = { count: 0, budget: 0 };
-      typeMap[t].count++;
-      typeMap[t].budget += rec.budget;
-    });
+    // デバッグ
     console.log('=== ダッシュボードデバッグ ===');
-    console.log('recordType別:', JSON.stringify(typeMap));
-    console.log('全Phase8合計:', allPhase8InQuarter.reduce((s, r) => s + r.budget, 0));
+    console.log('四半期範囲:', quarter.start, '〜', quarter.end);
     console.log('salesRecords総数:', salesRecords.length);
-    console.log('confirmedDateあり:', salesRecords.filter(r => r.confirmedDate).length);
-    console.log('confirmedDateなし:', salesRecords.filter(r => !r.confirmedDate).length);
+    const phaseMap = {};
+    salesRecords.forEach(r => { phaseMap[r.phase || '(空)'] = (phaseMap[r.phase || '(空)'] || 0) + 1; });
+    console.log('phase別件数:', JSON.stringify(phaseMap));
+    const phase8recs = salesRecords.filter(r => r.phase === 'フェーズ8');
+    console.log('Phase8件数:', phase8recs.length);
+    if (phase8recs.length > 0) {
+      console.log('Phase8サンプル:', JSON.stringify(phase8recs[0]));
+    }
+    if (salesRecords.length > 0) {
+      console.log('全レコードサンプル:', JSON.stringify(salesRecords[0]));
+    }
 
     // 1. 四半期実績（新規・既存を分けて集計 — salesRecordsのbudgetベース）
     const quarterNewRecords = getRecordsInRange('新規', quarter.start, quarter.end);
