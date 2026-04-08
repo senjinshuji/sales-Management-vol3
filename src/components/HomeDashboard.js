@@ -638,6 +638,7 @@ function HomeDashboard() {
   const [quarterMonthlyActual, setQuarterMonthlyActual] = useState([]); // 四半期内の月別売上（新規+既存）
   const [monthlyPersonalSales, setMonthlyPersonalSales] = useState([]);
   const [monthForecast, setMonthForecast] = useState([]);
+  const [clientBudgetSummary, setClientBudgetSummary] = useState([]);
 
   // 目標編集モーダル用state
   const [showTargetModal, setShowTargetModal] = useState(false);
@@ -743,6 +744,7 @@ function HomeDashboard() {
           recs.forEach(rd => {
             allSalesRecords.push({
               dealId: deal.id,
+              companyName: deal.companyName || deal.productName || '',
               representative: latestRep,
               recordType: rd.recordType,
               budget: typeof rd.budget === 'string' ? Number(rd.budget) || 0 : rd.budget || 0,
@@ -895,6 +897,32 @@ function HomeDashboard() {
       color: colors[index % colors.length]
     })).sort((a, b) => b.value - a.value);
     setMonthForecast(monthForecastData);
+
+    // 6. クライアント別獲得予算（四半期内のフェーズ8レコードをcompanyNameで集計）
+    const allQuarterRecords = [...quarterNewRecords, ...quarterExistingRecords];
+    const clientMap = {};
+    allQuarterRecords.forEach(rec => {
+      const name = rec.companyName || '不明';
+      if (!clientMap[name]) clientMap[name] = { budget: 0, count: 0 };
+      clientMap[name].budget += rec.budget;
+      clientMap[name].count += 1;
+    });
+    // 新規案件で直接フェーズ8のものも加算（salesRecords経由でない成約）
+    newDealsList.forEach(deal => {
+      if (deal.status !== 'フェーズ8') return;
+      if (!deal.confirmedDate) return;
+      const cd = new Date(deal.confirmedDate);
+      if (cd < quarter.start || cd > quarter.end) return;
+      const name = deal.companyName || deal.productName || '不明';
+      const budget = deal.expectedBudget || 0;
+      if (!clientMap[name]) clientMap[name] = { budget: 0, count: 0 };
+      clientMap[name].budget += budget;
+      clientMap[name].count += 1;
+    });
+    const clientData = Object.entries(clientMap)
+      .map(([name, data]) => ({ name, budget: data.budget, count: data.count }))
+      .sort((a, b) => b.budget - a.budget);
+    setClientBudgetSummary(clientData);
 
   }, []);
 
@@ -1220,6 +1248,51 @@ function HomeDashboard() {
           </TotalRow>
         </Card>
       </GridContainer>
+
+      {/* クライアント別獲得予算 */}
+      <FullWidthContainer>
+        <Card>
+          <CardTitle>
+            <FiDollarSign />
+            クライアント別獲得予算（{quarter.label}）
+          </CardTitle>
+          {clientBudgetSummary.length > 0 ? (
+            <div style={{ padding: '0 1rem 1rem' }}>
+              <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                <DealListTable>
+                  <thead>
+                    <tr>
+                      <DealListTh>クライアント</DealListTh>
+                      <DealListTh style={{ textAlign: 'right' }}>獲得予算</DealListTh>
+                      <DealListTh style={{ textAlign: 'right' }}>件数</DealListTh>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {clientBudgetSummary.map(client => (
+                      <tr key={client.name}>
+                        <DealListTd>{client.name}</DealListTd>
+                        <DealListTd style={{ textAlign: 'right', fontWeight: 'bold', color: '#27ae60' }}>{formatCurrency(client.budget)}</DealListTd>
+                        <DealListTd style={{ textAlign: 'right' }}>{client.count}件</DealListTd>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ borderTop: '2px solid #e9ecef', fontWeight: 'bold' }}>
+                      <DealListTd>合計</DealListTd>
+                      <DealListTd style={{ textAlign: 'right', color: '#2c3e50' }}>{formatCurrency(clientBudgetSummary.reduce((sum, c) => sum + c.budget, 0))}</DealListTd>
+                      <DealListTd style={{ textAlign: 'right' }}>{clientBudgetSummary.reduce((sum, c) => sum + c.count, 0)}件</DealListTd>
+                    </tr>
+                  </tfoot>
+                </DealListTable>
+              </div>
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', color: '#999', padding: '2rem' }}>
+              該当期間の成約案件がありません
+            </div>
+          )}
+        </Card>
+      </FullWidthContainer>
 
       {/* 担当者別案件サマリー */}
       <FullWidthContainer>
