@@ -357,8 +357,8 @@ function CoreCustomerPage() {
     const coreCustomersList = quarterData.filter(c => c.isCore);
     const totalCore = coreCustomersList.length;
     const totalProposals = quarterData.reduce((sum, c) => sum + c.proposalCount, 0);
-    const contacted = coreCustomersList.filter(c => c.actualContactDate).length;
-    const contactRate = totalCore > 0 ? Math.round((contacted / totalCore) * 100) : 0;
+    const contacted = quarterData.filter(c => c.actualContactDate).length;
+    const contactRate = totalCandidates > 0 ? Math.round((contacted / totalCandidates) * 100) : 0;
     return { totalCandidates, totalCore, totalProposals, contacted, contactRate };
   }, [quarterData]);
 
@@ -466,11 +466,11 @@ function CoreCustomerPage() {
           <KpiValue color="#3498db">{kpis.totalProposals}件</KpiValue>
         </KpiCard>
         <KpiCard>
-          <KpiLabel>コア顧客 四半期対面接触率</KpiLabel>
+          <KpiLabel>コア顧客候補 四半期対面接触率</KpiLabel>
           <KpiValue color={kpis.contactRate >= 80 ? '#27ae60' : kpis.contactRate >= 50 ? '#f39c12' : '#e74c3c'}>
             {kpis.contactRate}%
           </KpiValue>
-          <div style={{ fontSize: '0.75rem', color: '#999' }}>{kpis.contacted}/{kpis.totalCore}社</div>
+          <div style={{ fontSize: '0.75rem', color: '#999' }}>{kpis.contacted}/{kpis.totalCandidates}社</div>
         </KpiCard>
         <KpiCard>
           <KpiLabel>候補 四半期売上合計</KpiLabel>
