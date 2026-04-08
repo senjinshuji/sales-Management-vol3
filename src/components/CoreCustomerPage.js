@@ -336,10 +336,13 @@ function CoreCustomerPage() {
         !['フェーズ8', 'Dead', '失注'].includes(d.status)
       ).length;
 
+      const isCore = currentRevenue >= 5000000;
+
       return {
         ...customer,
         currentRevenue,
         prevRevenue,
+        isCore,
         plannedContactDate: qData.plannedContactDate || '',
         actualContactDate: qData.actualContactDate || '',
         monthActions,
@@ -348,13 +351,15 @@ function CoreCustomerPage() {
     });
   }, [coreCustomers, allSalesRecords, allDeals, selectedQuarter]);
 
-  // KPI計算
+  // KPI計算（コア顧客 = 今四半期500万円以上）
   const kpis = useMemo(() => {
-    const totalCore = quarterData.length;
+    const totalCandidates = quarterData.length;
+    const coreCustomersList = quarterData.filter(c => c.isCore);
+    const totalCore = coreCustomersList.length;
     const totalProposals = quarterData.reduce((sum, c) => sum + c.proposalCount, 0);
-    const contacted = quarterData.filter(c => c.actualContactDate).length;
+    const contacted = coreCustomersList.filter(c => c.actualContactDate).length;
     const contactRate = totalCore > 0 ? Math.round((contacted / totalCore) * 100) : 0;
-    return { totalCore, totalProposals, contacted, contactRate };
+    return { totalCandidates, totalCore, totalProposals, contacted, contactRate };
   }, [quarterData]);
 
   // コア顧客追加
@@ -375,7 +380,7 @@ function CoreCustomerPage() {
 
   // コア顧客削除
   const handleDelete = async (customer) => {
-    if (!window.confirm(`${customer.companyName} をコア顧客から外しますか？`)) return;
+    if (!window.confirm(`${customer.companyName} をコア顧客候補から外しますか？`)) return;
     try {
       await deleteDoc(doc(db, 'coreCustomers', customer.id));
       setCoreCustomers(prev => prev.filter(c => c.id !== customer.id));
@@ -452,22 +457,23 @@ function CoreCustomerPage() {
       {/* KPI */}
       <KpiRow>
         <KpiCard>
-          <KpiLabel>コア顧客数</KpiLabel>
+          <KpiLabel>コア顧客数（500万以上）</KpiLabel>
           <KpiValue>{kpis.totalCore}社</KpiValue>
+          <div style={{ fontSize: '0.75rem', color: '#999' }}>候補: {kpis.totalCandidates}社</div>
         </KpiCard>
         <KpiCard>
-          <KpiLabel>コア顧客への提案数</KpiLabel>
+          <KpiLabel>コア顧客候補への提案数</KpiLabel>
           <KpiValue color="#3498db">{kpis.totalProposals}件</KpiValue>
         </KpiCard>
         <KpiCard>
-          <KpiLabel>四半期対面接触率</KpiLabel>
+          <KpiLabel>コア顧客 四半期対面接触率</KpiLabel>
           <KpiValue color={kpis.contactRate >= 80 ? '#27ae60' : kpis.contactRate >= 50 ? '#f39c12' : '#e74c3c'}>
             {kpis.contactRate}%
           </KpiValue>
           <div style={{ fontSize: '0.75rem', color: '#999' }}>{kpis.contacted}/{kpis.totalCore}社</div>
         </KpiCard>
         <KpiCard>
-          <KpiLabel>コア顧客 四半期売上合計</KpiLabel>
+          <KpiLabel>候補 四半期売上合計</KpiLabel>
           <KpiValue color="#27ae60">
             {formatCurrency(quarterData.reduce((sum, c) => sum + c.currentRevenue, 0))}
           </KpiValue>
@@ -477,7 +483,7 @@ function CoreCustomerPage() {
       {/* コア顧客一覧 */}
       <Card>
         <CardHeader>
-          <CardTitle>コア顧客一覧</CardTitle>
+          <CardTitle>コア顧客候補一覧</CardTitle>
           {showAddInput ? (
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <select
@@ -499,13 +505,13 @@ function CoreCustomerPage() {
           ) : (
             <AddButton onClick={() => setShowAddInput(true)}>
               <FiPlus size={14} />
-              コア顧客を追加
+              候補を追加
             </AddButton>
           )}
         </CardHeader>
 
         {quarterData.length === 0 ? (
-          <EmptyMessage>コア顧客が登録されていません</EmptyMessage>
+          <EmptyMessage>コア顧客候補が登録されていません</EmptyMessage>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <Table>
@@ -527,8 +533,11 @@ function CoreCustomerPage() {
                 {quarterData.map(customer => (
                   <tr key={customer.id}>
                     <Td style={{ fontWeight: 'bold' }}>
-                      <FiStar size={14} color="#f39c12" style={{ marginRight: '0.3rem', verticalAlign: 'middle' }} />
+                      <FiStar size={14} color={customer.isCore ? '#f39c12' : '#ddd'} style={{ marginRight: '0.3rem', verticalAlign: 'middle' }} />
                       {customer.companyName}
+                      {customer.isCore && (
+                        <span style={{ marginLeft: '0.5rem', padding: '0.1rem 0.4rem', borderRadius: '4px', background: '#f39c12', color: 'white', fontSize: '0.7rem', fontWeight: 'bold' }}>コア</span>
+                      )}
                     </Td>
                     <Td style={{ textAlign: 'right' }}>{formatCurrency(customer.prevRevenue)}</Td>
                     <Td style={{ textAlign: 'right', fontWeight: 'bold', color: '#27ae60' }}>{formatCurrency(customer.currentRevenue)}</Td>
