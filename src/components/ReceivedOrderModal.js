@@ -213,18 +213,18 @@ const sendContractRequestToSlack = async (deal, contractData) => {
   const text = `📝 *契約書締結依頼*\n\n` +
     `<@U018HC2JY1L> <@U018GS87H7Y>\n\n` +
     `*会社名:* ${deal.companyName || deal.productName}\n` +
-    `*商材:* ${deal.productName}\n` +
     `*連絡グループ:* ${contractData.contactGroup}\n` +
     `*契約雛形:* ${templateHolder}が保有\n` +
-    `*契約内容:*\n${contractData.contractDetails}\n` +
-    `*受注金額:* ¥${Number(contractData.amount).toLocaleString()}`;
+    `*契約内容:*\n${contractData.contractDetails}`;
 
   try {
     await fetch(SLACK_WEBHOOK_URL, {
       method: 'POST',
       mode: 'no-cors',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({
+        text,
+        link_names: 1,
+      }),
     });
     return true;
   } catch (error) {
