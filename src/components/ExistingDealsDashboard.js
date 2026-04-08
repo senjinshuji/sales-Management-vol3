@@ -762,13 +762,14 @@ function ExistingDealsDashboard() {
     const currentMonth = getCurrentMonthRange(quarterKey);
     const now = new Date();
 
-    // ヘルパー: salesRecordsから「継続」ラベルかつconfirmedDateが期間内のレコードを抽出
+    // ヘルパー: salesRecordsから「継続」ラベルかつ成約日が期間内のレコードを抽出（confirmedDate優先、なければdate）
     const getContinuationRecordsInRange = (start, end) => {
       return salesRecords.filter(rec => {
         if (rec.recordType !== '継続') return false;
         if (rec.phase !== 'フェーズ8') return false;
-        if (!rec.confirmedDate) return false;
-        const recDate = new Date(rec.confirmedDate);
+        const d = rec.confirmedDate || rec.date;
+        if (!d) return false;
+        const recDate = new Date(d);
         return recDate >= start && recDate <= end;
       });
     };
