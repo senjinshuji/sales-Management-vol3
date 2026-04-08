@@ -734,7 +734,7 @@ function NewDealsDashboard() {
               dealId: deal.id,
               companyName: deal.companyName || '',
               productName: deal.productName || '',
-              confirmedDate: rd.confirmedDate || '',
+              confirmedDate: rd.confirmedDate || rd.date || '',
               representative: latestRep,
               proposalMenu: deal.proposalMenu,
               leadSource: deal.leadSource,

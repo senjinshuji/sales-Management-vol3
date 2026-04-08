@@ -737,7 +737,7 @@ function ExistingDealsDashboard() {
               budget: typeof rd.budget === 'string' ? Number(rd.budget) || 0 : rd.budget || 0,
               date: rd.date,
               phase: rd.phase,
-              confirmedDate: rd.confirmedDate || '',
+              confirmedDate: rd.confirmedDate || rd.date || '',
             });
           });
         } catch (err) {

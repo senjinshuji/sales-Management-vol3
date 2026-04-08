@@ -237,7 +237,7 @@ function ClosedDealsList() {
               dealId: deal.id,
               salesRecordId: rec.id,
               date: rd.date || '',
-              confirmedDate: rd.confirmedDate || '',
+              confirmedDate: rd.confirmedDate || rd.date || '',
               recordType: rd.recordType || '新規',
               companyName: deal.companyName || '',
               productName: deal.productName || '',
