@@ -316,9 +316,10 @@ function ClosedDealsList() {
     const term = searchTerm.toLowerCase();
 
     let result = records.filter(rec => {
-      // 日付フィルタ
-      if (!rec.date) return false;
-      const recDate = new Date(rec.date);
+      // 日付フィルタ（成約日ベース）
+      const d = rec.confirmedDate || rec.date;
+      if (!d) return false;
+      const recDate = new Date(d);
       if (recDate < rangeStart || recDate > rangeEnd) return false;
 
       // 検索フィルタ（会社名・商材名）
