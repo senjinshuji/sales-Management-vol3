@@ -26,6 +26,7 @@ import ProjectManagementPage from './components/ProjectManagementPage.js';
 import ClosedDealsList from './components/ClosedDealsList.js';
 import ProposalDealsList from './components/ProposalDealsList.js';
 import OperatorDashboard from './components/OperatorDashboard.js';
+import CoreCustomerPage from './components/CoreCustomerPage.js';
 import { UndoProvider } from './contexts/UndoContext.js';
 import authService from './services/authService.js';
 import './App.css';
@@ -321,6 +322,12 @@ function AdminApp() {
                   案件一覧
                 </NavDropdownLink>
               </NavDropdownItem>
+              <NavDropdownItem>
+                <NavDropdownLink to="/core-customers">
+                  <FiStar />
+                  コア顧客
+                </NavDropdownLink>
+              </NavDropdownItem>
             </NavDropdownMenu>
           </NavDropdown>
           <NavItem>
@@ -407,6 +414,7 @@ function AdminApp() {
           <Route path="/staff-master" element={<StaffMasterPage />} />
           <Route path="/next-action-management" element={<NextActionManagementPage />} />
           <Route path="/operator-dashboard" element={<OperatorDashboard />} />
+          <Route path="/core-customers" element={<CoreCustomerPage />} />
         </Routes>
       </MainContent>
       </AppContainer>
