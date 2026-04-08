@@ -211,6 +211,7 @@ const SLACK_WEBHOOK_URL = process.env.REACT_APP_SLACK_WEBHOOK_URL || '';
 const sendContractRequestToSlack = async (deal, contractData) => {
   const templateHolder = contractData.contractTemplateHolder === 'ours' ? '弊社' : '先方';
   const text = `📝 *契約書締結依頼*\n\n` +
+    `<@U018HC2JY1L> <@U018GS87H7Y>\n\n` +
     `*会社名:* ${deal.companyName || deal.productName}\n` +
     `*商材:* ${deal.productName}\n` +
     `*連絡グループ:* ${contractData.contactGroup}\n` +
