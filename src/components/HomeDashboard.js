@@ -786,6 +786,28 @@ function HomeDashboard() {
       });
     };
 
+    // デバッグ: recordType別の内訳を確認
+    const allPhase8InQuarter = salesRecords.filter(rec => {
+      if (rec.phase !== 'フェーズ8') return false;
+      const d = rec.confirmedDate || rec.date;
+      if (!d) return false;
+      const recDate = new Date(d);
+      return recDate >= quarter.start && recDate <= quarter.end;
+    });
+    const typeMap = {};
+    allPhase8InQuarter.forEach(rec => {
+      const t = rec.recordType || '(空)';
+      if (!typeMap[t]) typeMap[t] = { count: 0, budget: 0 };
+      typeMap[t].count++;
+      typeMap[t].budget += rec.budget;
+    });
+    console.log('=== ダッシュボードデバッグ ===');
+    console.log('recordType別:', JSON.stringify(typeMap));
+    console.log('全Phase8合計:', allPhase8InQuarter.reduce((s, r) => s + r.budget, 0));
+    console.log('salesRecords総数:', salesRecords.length);
+    console.log('confirmedDateあり:', salesRecords.filter(r => r.confirmedDate).length);
+    console.log('confirmedDateなし:', salesRecords.filter(r => !r.confirmedDate).length);
+
     // 1. 四半期実績（新規・既存を分けて集計 — salesRecordsのbudgetベース）
     const quarterNewRecords = getRecordsInRange('新規', quarter.start, quarter.end);
     const quarterExistingRecords = getRecordsInRange('継続', quarter.start, quarter.end);
