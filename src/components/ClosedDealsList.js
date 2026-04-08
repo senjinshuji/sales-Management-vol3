@@ -235,8 +235,9 @@ function ClosedDealsList() {
             allRecords.push({
               id: `${deal.id}_${rec.id}`,
               dealId: deal.id,
+              salesRecordId: rec.id,
               date: rd.date || '',
-              confirmedDate: deal.confirmedDate || '',
+              confirmedDate: rd.confirmedDate || '',
               recordType: rd.recordType || '新規',
               companyName: deal.companyName || '',
               productName: deal.productName || '',
@@ -263,14 +264,14 @@ function ClosedDealsList() {
     fetchData();
   }, [fetchData]);
 
-  // 成約日の保存
+  // 成約日の保存（salesRecord個別に保存）
   const handleSaveConfirmedDate = async (rec) => {
     try {
-      await updateDoc(doc(db, 'progressDashboard', rec.dealId), {
+      await updateDoc(doc(db, 'progressDashboard', rec.dealId, 'salesRecords', rec.salesRecordId), {
         confirmedDate: editingConfirmedDate,
       });
       setRecords(prev => prev.map(r =>
-        r.dealId === rec.dealId ? { ...r, confirmedDate: editingConfirmedDate } : r
+        r.id === rec.id ? { ...r, confirmedDate: editingConfirmedDate } : r
       ));
       setEditingId(null);
     } catch (error) {

@@ -745,7 +745,7 @@ function HomeDashboard() {
             allSalesRecords.push({
               dealId: deal.id,
               companyName: deal.companyName || deal.productName || '',
-              confirmedDate: deal.confirmedDate || '',
+              confirmedDate: rd.confirmedDate || '',
               representative: latestRep,
               recordType: rd.recordType,
               budget: typeof rd.budget === 'string' ? Number(rd.budget) || 0 : rd.budget || 0,
