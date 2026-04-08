@@ -899,26 +899,10 @@ function HomeDashboard() {
     })).sort((a, b) => b.value - a.value);
     setMonthForecast(monthForecastData);
 
-    // 6. クライアント別獲得予算（成約日が四半期内の全案件を集計）
+    // 6. クライアント別獲得予算（四半期実績と同じロジック: salesRecordsのdateベース）
+    const allQuarterRecords = [...quarterNewRecords, ...quarterExistingRecords];
     const clientMap = {};
-    // 新規案件（confirmedDateベース）
-    newDealsList.forEach(deal => {
-      if (deal.status !== 'フェーズ8') return;
-      if (!deal.confirmedDate) return;
-      const cd = new Date(deal.confirmedDate);
-      if (cd < quarter.start || cd > quarter.end) return;
-      const name = deal.companyName || deal.productName || '不明';
-      const budget = deal.expectedBudget || 0;
-      if (!clientMap[name]) clientMap[name] = { budget: 0, count: 0 };
-      clientMap[name].budget += budget;
-      clientMap[name].count += 1;
-    });
-    // 既存案件のsalesRecords（confirmedDateベース）
-    salesRecords.forEach(rec => {
-      if (rec.phase !== 'フェーズ8') return;
-      if (!rec.confirmedDate) return;
-      const cd = new Date(rec.confirmedDate);
-      if (cd < quarter.start || cd > quarter.end) return;
+    allQuarterRecords.forEach(rec => {
       const name = rec.companyName || '不明';
       if (!clientMap[name]) clientMap[name] = { budget: 0, count: 0 };
       clientMap[name].budget += rec.budget;
