@@ -95,3 +95,51 @@ textarea:focus-visible {
   font-variant-numeric: tabular-nums;
   font-family: var(--font-mono);
 }
+
+/* ===== モバイル対応 ===== */
+@media (max-width: 768px) {
+  /* テーブルは横スクロール */
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  thead, tbody, tr {
+    min-width: max-content;
+  }
+
+  /* カードグリッドを1列に */
+  [class*="GridContainer"],
+  [class*="SummaryRow"],
+  [class*="KpiRow"] {
+    flex-direction: column !important;
+    gap: 0.75rem !important;
+  }
+
+  /* フィルター行を折り返し */
+  [class*="FilterRow"],
+  [class*="FilterGrid"],
+  [class*="FilterSection"] > div {
+    flex-wrap: wrap !important;
+  }
+
+  /* コンテナのパディング調整 */
+  [class*="Container"] {
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+  }
+
+  /* モーダルを画面幅に */
+  [class*="ModalContent"],
+  [class*="ModalBox"] {
+    width: 95% !important;
+    max-width: 95% !important;
+    margin: 1rem auto;
+  }
+
+  /* select/inputをタップしやすく */
+  select, input, textarea, button {
+    min-height: 40px;
+    font-size: 16px !important; /* iOSズーム防止 */
+  }
+}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import styled from 'styled-components';
-import { FiPlus, FiList, FiGrid, FiBarChart, FiUsers, FiUser, FiFileText, FiLogOut, FiDollarSign, FiHome, FiStar, FiTrendingUp, FiCalendar, FiClipboard, FiRepeat, FiBriefcase } from 'react-icons/fi';
+import { FiPlus, FiList, FiGrid, FiBarChart, FiUsers, FiUser, FiFileText, FiLogOut, FiDollarSign, FiHome, FiStar, FiTrendingUp, FiCalendar, FiClipboard, FiRepeat, FiBriefcase, FiMenu, FiX, FiChevronDown } from 'react-icons/fi';
 import { analyzeMeetingNotes, isGPTServiceAvailable, debugAPIStatus, checkAPIKeyStatus } from './services/gptService.js';
 import LoginPage from './components/LoginPage.js';
 import ProtectedRoute from './components/ProtectedRoute.js';
@@ -50,6 +50,10 @@ const Header = styled.header`
   display: flex;
   justify-content: space-between;
   align-items: center;
+  @media (max-width: 768px) {
+    padding: 0 1rem;
+    height: 48px;
+  }
 `;
 
 const Title = styled.h1`
@@ -91,10 +95,35 @@ const LogoutButton = styled.button`
   }
 `;
 
+const HamburgerButton = styled.button`
+  display: none;
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0.4rem;
+  font-size: 1.2rem;
+  @media (max-width: 768px) {
+    display: flex;
+    align-items: center;
+  }
+`;
+
 const NavContainer = styled.nav`
   background: #1E293B;
   padding: 0 1.5rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  @media (max-width: 768px) {
+    display: ${props => props.$open ? 'block' : 'none'};
+    padding: 0;
+    position: fixed;
+    top: 48px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 999;
+    overflow-y: auto;
+  }
 `;
 
 const NavList = styled.ul`
@@ -103,6 +132,9 @@ const NavList = styled.ul`
   padding: 0;
   display: flex;
   gap: 0;
+  @media (max-width: 768px) {
+    flex-direction: column;
+  }
 `;
 
 const NavItem = styled.li`
@@ -138,6 +170,15 @@ const NavDropdown = styled.div`
   &:hover > ul {
     display: block;
   }
+
+  @media (max-width: 768px) {
+    &:hover > ul {
+      display: none;
+    }
+    &.mobile-open > ul {
+      display: block;
+    }
+  }
 `;
 
 const NavDropdownButton = styled.div`
@@ -171,6 +212,14 @@ const NavDropdownMenu = styled.ul`
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 0 0 var(--radius-md) var(--radius-md);
   z-index: 100;
+  @media (max-width: 768px) {
+    position: static;
+    box-shadow: none;
+    border: none;
+    border-radius: 0;
+    background: #162032;
+    padding-left: 1.5rem;
+  }
 `;
 
 const NavDropdownItem = styled.li`
@@ -196,10 +245,25 @@ const NavDropdownLink = styled(Link)`
 
 const MainContent = styled.main`
   padding: 24px 32px;
+  @media (max-width: 768px) {
+    padding: 12px 8px;
+  }
 `;
 
 // 管理者アプリケーションコンポーネント
 function AdminApp() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [openDropdown, setOpenDropdown] = useState(null);
+
+  const toggleDropdown = (name) => {
+    setOpenDropdown(prev => prev === name ? null : name);
+  };
+
+  const closeMobileMenu = () => {
+    setMobileMenuOpen(false);
+    setOpenDropdown(null);
+  };
+
   // GPT APIテスト関数をwindowオブジェクトに追加（開発用）
   useEffect(() => {
     window.testGPTAPI = async (testText = 'テスト用の議事録：顧客は来月のサービス導入を検討中。予算は月額30万円。技術部門との打ち合わせが必要。') => {
@@ -246,7 +310,12 @@ function AdminApp() {
       <AppContainer>
         <HeaderWrapper>
         <Header>
-        <Title>営業進捗管理ツール</Title>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <HamburgerButton onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+            {mobileMenuOpen ? <FiX size={22} /> : <FiMenu size={22} />}
+          </HamburgerButton>
+          <Title>営業進捗管理ツール</Title>
+        </div>
         <UserInfo>
           <UserText>管理者としてログイン中</UserText>
           <LogoutButton onClick={handleLogout}>
@@ -256,74 +325,77 @@ function AdminApp() {
         </UserInfo>
       </Header>
       
-      <NavContainer>
+      <NavContainer $open={mobileMenuOpen}>
         <NavList>
-          <NavDropdown>
-            <NavDropdownButton>
+          <NavDropdown className={openDropdown === 'home' ? 'mobile-open' : ''}>
+            <NavDropdownButton onClick={() => toggleDropdown('home')}>
               <FiHome />
               ホーム
+              <FiChevronDown size={12} style={{ marginLeft: 'auto' }} />
             </NavDropdownButton>
             <NavDropdownMenu>
               <NavDropdownItem>
-                <NavDropdownLink to="/">
+                <NavDropdownLink to="/" onClick={closeMobileMenu}>
                   <FiBarChart />
                   ダッシュボード
                 </NavDropdownLink>
               </NavDropdownItem>
               <NavDropdownItem>
-                <NavDropdownLink to="/closed-deals">
+                <NavDropdownLink to="/closed-deals" onClick={closeMobileMenu}>
                   <FiDollarSign />
                   成約案件一覧
                 </NavDropdownLink>
               </NavDropdownItem>
               <NavDropdownItem>
-                <NavDropdownLink to="/proposal-deals">
+                <NavDropdownLink to="/proposal-deals" onClick={closeMobileMenu}>
                   <FiList />
                   提案案件一覧
                 </NavDropdownLink>
               </NavDropdownItem>
             </NavDropdownMenu>
           </NavDropdown>
-          <NavDropdown>
-            <NavDropdownButton>
+          <NavDropdown className={openDropdown === 'new' ? 'mobile-open' : ''}>
+            <NavDropdownButton onClick={() => toggleDropdown('new')}>
               <FiBarChart />
               新規案件
+              <FiChevronDown size={12} style={{ marginLeft: 'auto' }} />
             </NavDropdownButton>
             <NavDropdownMenu>
               <NavDropdownItem>
-                <NavDropdownLink to="/new-deals-dashboard">
+                <NavDropdownLink to="/new-deals-dashboard" onClick={closeMobileMenu}>
                   <FiBarChart />
                   ダッシュボード
                 </NavDropdownLink>
               </NavDropdownItem>
               <NavDropdownItem>
-                <NavDropdownLink to="/progress-dashboard">
+                <NavDropdownLink to="/progress-dashboard" onClick={closeMobileMenu}>
                   <FiList />
                   新規案件一覧
                 </NavDropdownLink>
               </NavDropdownItem>
             </NavDropdownMenu>
           </NavDropdown>
-          <NavDropdown>
-            <NavDropdownButton>
+          <NavDropdown className={openDropdown === 'existing' ? 'mobile-open' : ''}>
+            <NavDropdownButton onClick={() => toggleDropdown('existing')}>
               <FiBriefcase />
               既存案件
+              <FiChevronDown size={12} style={{ marginLeft: 'auto' }} />
             </NavDropdownButton>
             <NavDropdownMenu>
               <NavDropdownItem>
-                <NavDropdownLink to="/existing-deals-dashboard">
+                <NavDropdownLink to="/existing-deals-dashboard" onClick={closeMobileMenu}>
                   <FiBarChart />
                   ダッシュボード
                 </NavDropdownLink>
               </NavDropdownItem>
               <NavDropdownItem>
-                <NavDropdownLink to="/project-management">
+                <NavDropdownLink to="/project-management" onClick={closeMobileMenu}>
                   <FiList />
                   案件一覧
                 </NavDropdownLink>
               </NavDropdownItem>
               <NavDropdownItem>
-                <NavDropdownLink to="/core-customers">
+                <NavDropdownLink to="/core-customers" onClick={closeMobileMenu}>
                   <FiStar />
                   コア顧客
                 </NavDropdownLink>
@@ -331,55 +403,56 @@ function AdminApp() {
             </NavDropdownMenu>
           </NavDropdown>
           <NavItem>
-            <NavLink to="/operator-dashboard">
+            <NavLink to="/operator-dashboard" onClick={closeMobileMenu}>
               <FiUser />
               運用管理
             </NavLink>
           </NavItem>
           <NavItem>
-            <NavLink to="/next-action-management">
+            <NavLink to="/next-action-management" onClick={closeMobileMenu}>
               <FiClipboard />
               NA管理
             </NavLink>
           </NavItem>
-          <NavDropdown>
-            <NavDropdownButton>
+          <NavDropdown className={openDropdown === 'master' ? 'mobile-open' : ''}>
+            <NavDropdownButton onClick={() => toggleDropdown('master')}>
               <FiUsers />
               マスター管理
+              <FiChevronDown size={12} style={{ marginLeft: 'auto' }} />
             </NavDropdownButton>
             <NavDropdownMenu>
               <NavDropdownItem>
-                <NavDropdownLink to="/introducer-master">
+                <NavDropdownLink to="/introducer-master" onClick={closeMobileMenu}>
                   <FiUsers />
                   紹介者マスター
                 </NavDropdownLink>
               </NavDropdownItem>
               <NavDropdownItem>
-                <NavDropdownLink to="/proposal-menu-master">
+                <NavDropdownLink to="/proposal-menu-master" onClick={closeMobileMenu}>
                   <FiList />
                   提案メニューマスター
                 </NavDropdownLink>
               </NavDropdownItem>
               <NavDropdownItem>
-                <NavDropdownLink to="/lead-source-master">
+                <NavDropdownLink to="/lead-source-master" onClick={closeMobileMenu}>
                   <FiList />
                   流入経路マスター
                 </NavDropdownLink>
               </NavDropdownItem>
               <NavDropdownItem>
-                <NavDropdownLink to="/if/list">
+                <NavDropdownLink to="/if/list" onClick={closeMobileMenu}>
                   <FiStar />
                   インフルエンサー
                 </NavDropdownLink>
               </NavDropdownItem>
               <NavDropdownItem>
-                <NavDropdownLink to="/casting/manage">
+                <NavDropdownLink to="/casting/manage" onClick={closeMobileMenu}>
                   <FiTrendingUp />
                   キャスティング管理
                 </NavDropdownLink>
               </NavDropdownItem>
               <NavDropdownItem>
-                <NavDropdownLink to="/staff-master">
+                <NavDropdownLink to="/staff-master" onClick={closeMobileMenu}>
                   <FiUser />
                   担当者管理
                 </NavDropdownLink>
