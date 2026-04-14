@@ -1569,6 +1569,54 @@ const NextActionManagementPage = () => {
                 </DetailField>
               )}
 
+              {/* 同じ商材の他のNA */}
+              {selectedNa.projectId !== STANDALONE_NA_PROJECT_ID && (() => {
+                const relatedNas = allNas.filter(na =>
+                  na.projectId === selectedNa.projectId &&
+                  na.id !== selectedNa.id
+                );
+                return relatedNas.length > 0 ? (
+                  <DetailField>
+                    <DetailLabel>この商材の他のNA（{relatedNas.length}件）</DetailLabel>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.25rem' }}>
+                      {relatedNas.map(na => (
+                        <div
+                          key={`${na.projectId}_${na.recordId}_${na.id}`}
+                          onClick={() => { setSelectedNa(na); }}
+                          style={{
+                            padding: '0.5rem 0.6rem',
+                            background: '#f8f9fa',
+                            borderRadius: '6px',
+                            border: '1px solid #e9ecef',
+                            cursor: 'pointer',
+                            fontSize: '0.8rem',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
+                            <span style={{
+                              padding: '0.1rem 0.4rem',
+                              borderRadius: '4px',
+                              fontSize: '0.7rem',
+                              fontWeight: 600,
+                              color: 'white',
+                              background: getStatusInfo(na.actionStatus || STATUS_ACTIVE).color,
+                            }}>
+                              {getStatusInfo(na.actionStatus || STATUS_ACTIVE).label}
+                            </span>
+                            <span style={{ color: '#999', fontSize: '0.75rem' }}>{na.actionDueDate || '期日なし'}</span>
+                          </div>
+                          <div style={{ color: '#2c3e50', lineHeight: 1.4 }}>
+                            {(na.actionContent || '').length > 60
+                              ? (na.actionContent || '').slice(0, 60) + '...'
+                              : (na.actionContent || '（未入力）')}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </DetailField>
+                ) : null;
+              })()}
+
               {/* 営業メモを開く（スタンドアロンNAでは非表示） */}
               {selectedNa.projectId !== STANDALONE_NA_PROJECT_ID && (
                 <NavigateButton onClick={openSalesPanel}>
